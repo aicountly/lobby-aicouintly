@@ -12,10 +12,10 @@ const LEGACY_SANDBOX_RE = /^gh-[a-z0-9-]+\.aicountly\.com$/i
  * Product key used in the portal `authentication_jump/{key}` URL.
  *
  * Normally derived from the hostname, so one build serves both
- * receptionist.aicountly.com and receptionist.gh.aicountly.com. This is the fallback for
+ * lobby.aicountly.com and lobby.gh.aicountly.com. This is the fallback for
  * hosts the pattern does not cover — localhost above all.
  */
-export const PRODUCT_KEY = (import.meta.env.VITE_PRODUCT_KEY ?? 'receptionist').trim() || 'receptionist'
+export const PRODUCT_KEY = (import.meta.env.VITE_PRODUCT_KEY ?? 'lobby').trim() || 'lobby'
 
 /** Login portal — renders the sign-in form and performs the SSO jump. */
 export const PORTAL_LOGIN_PRODUCTION = 'https://my.aicountly.com'
@@ -52,8 +52,8 @@ export function isSandboxHost(hostname: string = currentHost()): boolean {
 }
 
 /**
- * `receptionist.aicountly.com` and `receptionist.gh.aicountly.com` both resolve to
- * `receptionist`, which is what the portal expects in authentication_jump.
+ * `lobby.aicountly.com` and `lobby.gh.aicountly.com` both resolve to
+ * `lobby`, which is what the portal expects in authentication_jump.
  */
 export function resolveProductKeyFromHost(hostname: string = currentHost()): string {
   const host = normalizeHost(hostname)
