@@ -1,12 +1,12 @@
-# receptionist-aicouintly
+# lobby-aicouintly
 
-Receptionist for Aicountly — a React single-page app built with Vite and TypeScript,
+**Aicountly Lobby** — a React single-page app built with Vite and TypeScript,
 with a small PHP API alongside it. Both halves deploy to cPanel.
 
 | Environment | App | API |
 | --- | --- | --- |
-| Production | https://receptionist.aicountly.com | https://receptionist.aicountly.com/api |
-| Sandbox | https://receptionist.gh.aicountly.com | https://receptionist.gh.aicountly.com/api |
+| Production | https://lobby.aicountly.com | https://lobby.aicountly.com/api |
+| Sandbox | https://lobby.gh.aicountly.com | https://lobby.gh.aicountly.com/api |
 
 ## What this app does today
 
@@ -42,7 +42,7 @@ npm run dev
 
 The dev server runs on http://localhost:5173 and signs in through the **sandbox**
 portal. Point `VITE_API_BASE_URL` at the deployed sandbox API
-(`https://receptionist.gh.aicountly.com/api`) so the token exchange has somewhere to
+(`https://lobby.gh.aicountly.com/api`) so the token exchange has somewhere to
 go — and add `http://localhost:5173` to `CORS_ALLOWED_ORIGINS` in that server's
 `api/.env`, since localhost is the one case where the app and API are not
 same-origin.
@@ -138,7 +138,7 @@ The repository **variables** `PROD_API_BASE_URL` and `SANDBOX_API_BASE_URL` are
 optional. Unset, the app calls its own origin + `/api` — which is where the same
 workflow puts the API. Set one only to point the app at a different API domain.
 
-### Receptionist on the rsync steps
+### Lobby on the rsync steps
 
 Each workflow runs two `rsync --delete` steps, one after the other, and the
 excludes are what make that safe.

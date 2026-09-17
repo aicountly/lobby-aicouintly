@@ -1,5 +1,5 @@
 /**
- * Google Analytics 4 (gtag) for receptionist.aicountly.com.
+ * Google Analytics 4 (gtag) for lobby.aicountly.com.
  *
  * Set at build time: VITE_GA4_SAAS_RECEPTIONIST_MEASUREMENT_ID=G-…
  * Flow backend: GA4_PROPERTY_ID_SAAS_RECEPTIONIST (numeric property ID).

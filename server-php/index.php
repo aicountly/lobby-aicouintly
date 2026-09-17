@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 /**
- * Receptionist API — front controller.
+ * Lobby API — front controller.
  *
  * Deployed to <document root>/api, so it is same-origin with the React app on
- * both receptionist.aicountly.com and receptionist.gh.aicountly.com.
+ * both lobby.aicountly.com and lobby.gh.aicountly.com.
  *
  * Routes:
  *   GET  /api/health          liveness + which environment answered
@@ -167,7 +167,7 @@ $path = normalise_path($uri);
 if ($path === '' || $path === 'health') {
     send_json(200, [
         'status' => 'ok',
-        'app' => 'Receptionist',
+        'app' => 'Lobby',
         'env' => Env::get('APP_ENV', 'unknown'),
         'time' => gmdate('c'),
     ]);

@@ -4,7 +4,7 @@
  * Flow (docs/auth/AICOUNTLY_AUTH_WORKFLOW.md):
  *
  *   1. App opens with no auth_token
- *   2. → {portal}/login/authentication_jump/receptionist?returnUrl={origin}/auth/callback
+ *   2. → {portal}/login/authentication_jump/lobby?returnUrl={origin}/auth/callback
  *      The portal reuses an existing *.aicountly.com session when the user came
  *      from another AICOUNTLY product; otherwise it shows its login form.
  *   3. ← {origin}/auth/callback?auth_token=…
@@ -29,7 +29,7 @@ const RETURN_PARAM = 'returnUrl'
 export const CALLBACK_PATH = '/auth/callback'
 
 const LOGOUT_FLAG = 'aic_logout'
-const REDIRECT_GUARD_KEY = 'receptionist:loginRedirectGuard'
+const REDIRECT_GUARD_KEY = 'lobby:loginRedirectGuard'
 const REDIRECT_GUARD_MS = 12_000
 const REDIRECT_MAX = 3
 
