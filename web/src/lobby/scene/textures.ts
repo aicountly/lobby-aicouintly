@@ -233,7 +233,7 @@ export function signTexture(text: string, options: SignOptions = {}): THREE.Canv
   if (eyebrow) {
     baseline = height * 0.6
     ctx.fillStyle = accent
-    const tracked = eyebrow.toUpperCase().split('').join(' ')
+    const tracked = eyebrow.toUpperCase().split('').join(' ')
     ctx.font = fitFont(ctx, tracked, Math.round(fontSize * 0.34), usable)
     ctx.fillText(tracked, x, height * 0.27)
   }
