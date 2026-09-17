@@ -1,7 +1,17 @@
 # lobby-aicouintly
 
-Lobby for Aicountly — a React single-page app built with Vite and TypeScript,
+**Aicountly Lobby** — a React single-page app built with Vite and TypeScript,
 with a small PHP API alongside it. Both halves deploy to cPanel.
+
+> *Aicountly Lobby* was first used as this feature's internal display name
+> for the navigable 3D reception area described below. The product itself has
+> since been renamed from *Receptionist* to *Lobby* too, so the name is now
+> shared on purpose: the whole app is Aicountly Lobby, and the 3D visitor
+> experience at `/lobby` is one part of it. The app now serves from
+> `lobby.aicountly.com` / `lobby.gh.aicountly.com`; the portal product key
+> moved to `lobby`, with `receptionist` kept as an alias so old links still
+> resolve. The GA4 property and every `/api` route keep the identifiers they
+> already had.
 
 | Environment | App | API |
 | --- | --- | --- |
@@ -10,9 +20,38 @@ with a small PHP API alongside it. Both halves deploy to cPanel.
 
 ## What this app does today
 
-Login → Dashboard. The dashboard shows a welcome message and a **Log out**
-button, and nothing else. No navigation, no modules, no placeholder cards —
-those arrive with the product.
+A navigable 3D office lobby, rendered in the browser with three.js. A visitor
+can look around through a full 360 degrees, walk through the room, and use the
+reception desk.
+
+The room is real geometry, not a backdrop: floor, ceiling and four walls, a
+glazed entrance, a reception counter with a placeholder receptionist behind it,
+a waiting lounge with a sofa and armchairs, and a glazed meeting-room entrance
+with a corridor behind it. All of it is generated from primitives at runtime —
+there is not one model or texture file in the repository, so a fresh clone
+renders a complete room with nothing to download.
+
+Selecting reception opens three services: **book an appointment**, **make an
+enquiry**, and **speak to our team**. In the shipped configuration all three are
+demonstration journeys that run entirely in the browser. **Nothing is booked, no
+message is sent, and no member of staff is contacted.**
+
+**Standard View** offers the same three services as an ordinary page, with no 3D
+at all. It is also where a visitor lands if WebGL is unavailable or the renderer
+fails.
+
+### Two ways in
+
+| Path | Sign-in | What it is |
+| --- | --- | --- |
+| `/lobby` | **No** | The visitor lobby |
+| `/` | Yes, via the portal | The same lobby, plus the app launcher and Log out |
+
+`/lobby` is public on purpose. It is generated geometry and local demonstration
+journeys: it reads no business data and, in the default configuration, makes no
+API call at all. Signing in is unchanged everywhere else — the portal
+round-trip in `AuthProvider` still gates `/` exactly as it did. Set
+`VITE_LOBBY_PUBLIC_PATH=` (empty) to withdraw the public route.
 
 Signing in is the AICOUNTLY portal's job, the same as every other AICOUNTLY
 SaaS: the app redirects to the portal, the portal returns an `auth_token`, and
@@ -21,13 +60,55 @@ in to another AICOUNTLY product lands straight on the dashboard.
 
 See [docs/auth/AICOUNTLY_AUTH_WORKFLOW.md](docs/auth/AICOUNTLY_AUTH_WORKFLOW.md).
 
+### Getting around
+
+| | |
+| --- | --- |
+| Look around | Drag with the mouse, or swipe on touch. A full circle, with the vertical tilt limited to ±60°. |
+| Walk | `W` `A` `S` `D` or the arrow keys, once the scene has focus. `Q` and `E` turn. |
+| Touch | The on-screen pad, bottom right. It works with a mouse and with the keyboard too. |
+| Destinations | **Reception**, **Waiting Lounge**, **Meeting Rooms** and **Return to Entrance** walk you there. |
+
+Pointer lock is never requested and the microphone is never opened. Movement
+stops while the service panel is open or while you are typing, and every held
+key is released when the window loses focus or you leave the scene. With
+`prefers-reduced-motion`, destinations arrive instantly and idle animation is
+off.
+
+### What the lobby is *not* connected to
+
+Each Aicountly app owns its own data, and Lobby holds none of it. In live mode
+(`VITE_LOBBY_SERVICE_MODE=live`) every capability currently reports itself
+unavailable and names what is missing, rather than faking a result. Appointments
+owns booking and reaches Calendar itself; Lobby has no calendar store and never
+calls Calendar directly. See
+[docs/lobby/INTEGRATIONS.md](docs/lobby/INTEGRATIONS.md).
+
+The 3D receptionist is a blocked-out placeholder with no face. It has **no
+facial animation, no lip-sync, no voice and no speech synthesis** — replacing it
+with a rigged character is a later phase, and
+[docs/lobby/ASSETS.md](docs/lobby/ASSETS.md) sets out exactly what such a
+character has to provide.
+
 ## Layout
 
 ```
 web/          React app (Vite). Builds to web/dist, deployed to the document root.
+  src/lobby/  the 3D lobby: layout, scene, navigation, services, assets
 server-php/   PHP API. Deployed to the api/ folder inside the document root.
-docs/         deployment and auth notes
+docs/         deployment, auth, and lobby notes
 ```
+
+### Inside `src/lobby/`
+
+| | |
+| --- | --- |
+| `layout.ts` | The floor plan, in metres. **The single source of truth** — the geometry and the collision boxes are both derived from it, so a sofa cannot drift away from the box that stops you walking through it. |
+| `scene/` | The room, built from primitives. Materials and textures are drawn into a canvas at runtime. |
+| `navigation/` | The camera controller and collision. Owns look, walk, travel, and the focus and blur rules. |
+| `services/` | `demoAdapter` and `liveAdapter` behind one interface. They never import each other. |
+| `assets/` | The runtime asset manifest that replaces procedural placeholders with glTF. |
+| `ui/` | The heads-up interface, the service panel, and Standard View. |
 
 ## Getting started
 
@@ -40,7 +121,13 @@ cp ../.env.example ../.env
 npm run dev
 ```
 
-The dev server runs on http://localhost:5173 and signs in through the **sandbox**
+The dev server runs on http://localhost:5173.
+
+**To see the lobby, open http://localhost:5173/lobby.** That path needs no
+sign-in and no API, so it works on a fresh clone with no configuration at all —
+`npm install && npm run dev` is the whole setup.
+
+The dashboard at http://localhost:5173/ signs in through the **sandbox**
 portal. Point `VITE_API_BASE_URL` at the deployed sandbox API
 (`https://lobby.gh.aicountly.com/api`) so the token exchange has somewhere to
 go — and add `http://localhost:5173` to `CORS_ALLOWED_ORIGINS` in that server's
@@ -53,6 +140,46 @@ same-origin.
 | `npm run build` | Type-check, then build to `web/dist/` |
 | `npm run typecheck` | Type-check only |
 | `npm run preview` | Serve the production build locally |
+
+### Checking the lobby by hand
+
+Open `/lobby` and work through this list — it is the behaviour most likely to
+break, and none of it is covered by the type-checker:
+
+1. **Turn all the way round.** Drag left four times. Reception, the meeting-room
+   portal, the glazed entrance and the lounge wall should each come past, and
+   the fourth turn should land back where you started.
+2. **Walk.** Hold `W`. Objects should grow as you approach and the perspective
+   should shift — if the view only pans, something is driving the camera's
+   rotation but not its position.
+3. **Walk into things.** Hold `W` at the counter and keep holding. You should
+   stop dead and stay stopped. Same into each wall.
+4. **Open Reception services and type.** Nothing in the room may move while you
+   are in a field, and no held key may survive the panel opening.
+5. **Alt-tab away mid-walk.** Come back: you should be standing still, not still
+   walking.
+6. **Turn on reduced motion.** Destinations should arrive instantly and the
+   placeholder should stop swaying.
+7. **Standard View.** The same three services, no canvas in the DOM.
+
+On a software renderer (a VM, a headless browser) the frame rate can drop below
+10fps, and walking is capped at one 0.1s step per frame so nobody tunnels
+through a wall. Below that rate you walk slower than wall-clock — hold the key
+longer before concluding a collider is broken. Destination travel is not capped
+this way and still takes about a second.
+
+### A note on the React version
+
+`react` and `react-dom` are pinned to `~19.2.0` rather than `^19.2.0`.
+
+`@react-three/fiber@9.7.0` — the current release — declares its React peer range
+as `>=19 <19.3`, so it has not yet certified React 19.3. Widening the range
+would let `npm install` resolve React 19.3 and produce an untested
+React/three.js combination, and `--legacy-peer-deps` would do the same thing
+silently. Loosen the pin when react-three-fiber publishes a release that accepts
+19.3.
+
+The 3D chunk is code-split: the sign-in screen does not download three.js.
 
 The PHP API has no build step and no dependencies. To run it locally:
 
@@ -79,6 +206,11 @@ template. There are two of them, and they work in opposite ways:
 | `VITE_APP_ENV` | `local`, `sandbox`, or `production` |
 | `VITE_PRODUCT_KEY` | Portal product key. Derived from the hostname when unset |
 | `VITE_PORTAL_LOGIN_URL` | Login portal override. Local development only |
+| `VITE_LOBBY_PUBLIC_PATH` | Public visitor-lobby path. Default `/lobby`; empty withdraws it |
+| `VITE_LOBBY_SERVICE_MODE` | `demo` (default) or `live` |
+| `VITE_LOBBY_APPOINTMENTS_API_BASE_URL` | Appointments API base URL. Appointments owns booking |
+| `VITE_LOBBY_RECEPTION_AI_PATH` | Path on *this* API fronting the reception AI. Never a key |
+| `VITE_LOBBY_ASSET_MANIFEST_URL` | Runtime 3D asset manifest. Default `/lobby-assets/manifest.json` |
 
 Only `VITE_`-prefixed variables reach the browser bundle, and Vite inlines them
 at build time, so **treat every one of them as public**. Never put a secret,
