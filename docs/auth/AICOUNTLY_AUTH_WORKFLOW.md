@@ -1,6 +1,6 @@
-# AICOUNTLY auth workflow (Receptionist)
+# AICOUNTLY auth workflow (Lobby)
 
-How Receptionist signs a user in. This is the shared AICOUNTLY SaaS flow — the same
+How Lobby signs a user in. This is the shared AICOUNTLY SaaS flow — the same
 one Smart Books and the other products use — reduced to what a blank app needs.
 The canonical implementation lives on **my.aicountly.com**; nothing here mints,
 signs or stores a credential of its own.
@@ -22,9 +22,9 @@ another AICOUNTLY product would have to sign in again.
 
 ## Login flow
 
-1. User opens `receptionist.aicountly.com` (or `receptionist.gh.aicountly.com`).
+1. User opens `lobby.aicountly.com` (or `lobby.gh.aicountly.com`).
 2. No `auth_token` → redirect to
-   `{portal}/login/authentication_jump/receptionist?returnUrl={origin}/auth/callback`.
+   `{portal}/login/authentication_jump/lobby?returnUrl={origin}/auth/callback`.
    The portal reuses an existing portal web session — this is what makes moving
    between AICOUNTLY products seamless. With no session it shows its login form.
 3. Portal redirects back to `/auth/callback?auth_token=…`. The SPA history
@@ -41,10 +41,10 @@ alive and the next visit signs the user straight back in.
 
 ## Host mapping
 
-| Receptionist host | Login redirect | Auth API | Product API |
+| Lobby host | Login redirect | Auth API | Product API |
 |---|---|---|---|
-| `receptionist.aicountly.com` | `my.aicountly.com` | `my.aicountly.com` | `receptionist.aicountly.com/api` |
-| `receptionist.gh.aicountly.com` | `sandbox.aicountly.com` | `my.aicountly.com` | `receptionist.gh.aicountly.com/api` |
+| `lobby.aicountly.com` | `my.aicountly.com` | `my.aicountly.com` | `lobby.aicountly.com/api` |
+| `lobby.gh.aicountly.com` | `sandbox.aicountly.com` | `my.aicountly.com` | `lobby.gh.aicountly.com/api` |
 
 **`sandbox.aicountly.com` is for the login redirect only.** `seskey`,
 `seskey/refresh` and `validatesession` always answer on `my.aicountly.com`, in
@@ -53,7 +53,7 @@ sandbox as well as production. Pointing a sandbox build at
 sign-in.
 
 One build serves both environments: `resolveProductKeyFromHost()` reads
-`receptionist` out of either hostname, and `isSandboxHost()` picks the portal.
+`lobby` out of either hostname, and `isSandboxHost()` picks the portal.
 
 ## Why the calls go through this product's own API
 
@@ -87,14 +87,14 @@ verified end to end in each environment.
 
 ```bash
 # 1. The API is up and says which environment it is
-curl https://receptionist.gh.aicountly.com/api/health
+curl https://lobby.gh.aicountly.com/api/health
 
 # 2. The relay reaches the portal (401 without a token is the correct answer —
 #    a 404 means the API is not deployed, a 504 means it cannot reach the portal)
-curl -i -X POST https://receptionist.gh.aicountly.com/api/global/seskey
+curl -i -X POST https://lobby.gh.aicountly.com/api/global/seskey
 
 # 3. Unrelayed paths are refused
-curl -i -X POST https://receptionist.gh.aicountly.com/api/global/login   # expect 404
+curl -i -X POST https://lobby.gh.aicountly.com/api/global/login   # expect 404
 ```
 
 In the browser: open the site, expect a jump to the portal, sign in, expect to
