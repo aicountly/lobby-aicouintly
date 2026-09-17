@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Receptionist API — Apache config for <document root>/api on cPanel.
+# Lobby API — Apache config for <document root>/api on cPanel.
 #
 # This file is deployed with the API. The web build ships its own .htaccess for
 # the document root, and those rules stop applying once these take over.
@@ -33,5 +33,5 @@
 </IfModule>
 
 # The API's .env sits inside the document root, so without this it would be
-# fetchable over HTTP at https://receptionist.aicountly.com/api/.env.
+# fetchable over HTTP at https://lobby.aicountly.com/api/.env.
 RedirectMatch 404 /\.(?!well-known)
