@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Deploy Receptionist to cPanel Sandbox  (https://receptionist.gh.aicountly.com)
+# Deploy Lobby to cPanel Sandbox  (https://lobby.gh.aicountly.com)
 #
 # MANUAL ONLY. The single trigger is workflow_dispatch — merging or pushing
 # never deploys. Add no push/pull_request/schedule triggers to this file.
@@ -101,12 +101,12 @@ jobs:
           # origin + /api, which is exactly where the "Deploy server-php to the
           # api folder" step below puts it.
           VITE_API_BASE_URL: ${{ vars.SANDBOX_API_BASE_URL }}
-          VITE_APP_NAME: Receptionist
+          VITE_APP_NAME: Lobby
           VITE_APP_ENV: sandbox
         working-directory: web
         run: |
           if [ -z "$VITE_API_BASE_URL" ]; then
-            echo "::notice::SANDBOX_API_BASE_URL is not set — the app will call https://receptionist.gh.aicountly.com/api (same origin), which is where this workflow deploys server-php below."
+            echo "::notice::SANDBOX_API_BASE_URL is not set — the app will call https://lobby.gh.aicountly.com/api (same origin), which is where this workflow deploys server-php below."
           else
             echo "Building against API base URL: $VITE_API_BASE_URL"
           fi
@@ -310,7 +310,7 @@ jobs:
       # than from the app's login screen. /health needs no credentials.
       - name: Smoke-test the deployed API
         run: |
-          url="https://receptionist.gh.aicountly.com/api/health"
+          url="https://lobby.gh.aicountly.com/api/health"
           code=$(curl -fsS -o /tmp/health.json -w '%{http_code}' --max-time 20 "$url" || echo "000")
           if [ "$code" = "200" ]; then
             echo "GET $url → 200"
@@ -331,7 +331,7 @@ jobs:
             echo ""
             echo "| | |"
             echo "|---|---|"
-            echo "| Target | https://receptionist.gh.aicountly.com |"
+            echo "| Target | https://lobby.gh.aicountly.com |"
             echo "| Web | \`web/dist/\` → document root |"
             echo "| API | \`server-php/\` → \`api/\` in the document root |"
             echo "| Commit | \`${GITHUB_SHA:0:7}\` |"

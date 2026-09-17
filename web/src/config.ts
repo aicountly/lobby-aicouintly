@@ -6,7 +6,7 @@
  * See docs/DEPLOYMENT.md.
  */
 
-export const APP_NAME = (import.meta.env.VITE_APP_NAME ?? 'Receptionist').trim() || 'Receptionist'
+export const APP_NAME = (import.meta.env.VITE_APP_NAME ?? 'Lobby').trim() || 'Lobby'
 
 /** `local` | `sandbox` | `production` — set by the deploy workflows. */
 export const APP_ENV = (import.meta.env.VITE_APP_ENV ?? 'local').trim() || 'local'
@@ -17,7 +17,7 @@ const CONFIGURED_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').trim()
  * Base URL of this product's own PHP API.
  *
  * server-php is deployed into `<document root>/api`, so the API is same-origin
- * with the app on both receptionist.aicountly.com and receptionist.gh.aicountly.com. That
+ * with the app on both lobby.aicountly.com and lobby.gh.aicountly.com. That
  * is what the fallback below assumes, and being same-origin is exactly what
  * keeps the auth relay free of CORS.
  */

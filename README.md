@@ -1,18 +1,22 @@
-# receptionist-aicouintly
+# lobby-aicouintly
 
 **Aicountly Lobby** — a React single-page app built with Vite and TypeScript,
 with a small PHP API alongside it. Both halves deploy to cPanel.
 
-> *Aicountly Lobby* is the product's new display name, and it is used in the
-> visitor interface only. The repository, the `receptionist.aicountly.com`
-> domains, the portal product key `receptionist`, the GA4 property and every
-> `/api` route keep the identifiers they already have — a display name is not a
-> reason to rename infrastructure.
+> *Aicountly Lobby* was first used as this feature's internal display name
+> for the navigable 3D reception area described below. The product itself has
+> since been renamed from *Receptionist* to *Lobby* too, so the name is now
+> shared on purpose: the whole app is Aicountly Lobby, and the 3D visitor
+> experience at `/lobby` is one part of it. The app now serves from
+> `lobby.aicountly.com` / `lobby.gh.aicountly.com`; the portal product key
+> moved to `lobby`, with `receptionist` kept as an alias so old links still
+> resolve. The GA4 property and every `/api` route keep the identifiers they
+> already had.
 
 | Environment | App | API |
 | --- | --- | --- |
-| Production | https://receptionist.aicountly.com | https://receptionist.aicountly.com/api |
-| Sandbox | https://receptionist.gh.aicountly.com | https://receptionist.gh.aicountly.com/api |
+| Production | https://lobby.aicountly.com | https://lobby.aicountly.com/api |
+| Sandbox | https://lobby.gh.aicountly.com | https://lobby.gh.aicountly.com/api |
 
 ## What this app does today
 
@@ -125,7 +129,7 @@ sign-in and no API, so it works on a fresh clone with no configuration at all �
 
 The dashboard at http://localhost:5173/ signs in through the **sandbox**
 portal. Point `VITE_API_BASE_URL` at the deployed sandbox API
-(`https://receptionist.gh.aicountly.com/api`) so the token exchange has somewhere to
+(`https://lobby.gh.aicountly.com/api`) so the token exchange has somewhere to
 go — and add `http://localhost:5173` to `CORS_ALLOWED_ORIGINS` in that server's
 `api/.env`, since localhost is the one case where the app and API are not
 same-origin.
@@ -266,7 +270,7 @@ The repository **variables** `PROD_API_BASE_URL` and `SANDBOX_API_BASE_URL` are
 optional. Unset, the app calls its own origin + `/api` — which is where the same
 workflow puts the API. Set one only to point the app at a different API domain.
 
-### Receptionist on the rsync steps
+### Lobby on the rsync steps
 
 Each workflow runs two `rsync --delete` steps, one after the other, and the
 excludes are what make that safe.
