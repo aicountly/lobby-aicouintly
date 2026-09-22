@@ -67,15 +67,17 @@ line to the document root of the `lobby.aicountly.com` subdomain, then paste the
 rest as-is. It is safe to re-run: nothing already in `.env` is overwritten.
 
 ```bash
+(                                                # a subshell: a failed check
+set -e                                           # cannot log you out of WHM
+
 # ── 1. The one line you edit ────────────────────────────────────────────────
-DOCROOT=/home/CPANELUSER/public_html            # ← the lobby subdomain's docroot
+DOCROOT=/home/CPANELUSER/public_html             # ← the lobby subdomain's docroot
 
 # ── 2. Work out who owns the account, so nothing is left owned by root ──────
-set -e
 API="$DOCROOT/api"
+test -f "$API/index.php" || { echo "No Lobby API at $API — check DOCROOT."; exit 1; }
 OWNER=$(stat -c '%U' "$DOCROOT")
 GROUP=$(stat -c '%G' "$DOCROOT")
-test -f "$API/index.php" || { echo "No Lobby API at $API — check DOCROOT."; exit 1; }
 echo "Account: $OWNER:$GROUP   API: $API"
 
 # ── 3. The Console service key, read without putting it in shell history ────
@@ -89,11 +91,11 @@ touch "$API/.env"
 add() { grep -q "^$1=" "$API/.env" || printf '%s=%s\n' "$1" "$2" >> "$API/.env"; }
 
 grep -q '^APP_ENV=' "$API/.env" || echo 'APP_ENV=production' >> "$API/.env"
-add CONSOLE_API_URL      'https://console.aicountly.org/api'
-add CONSOLE_SERVICE_KEY  "$CONSOLE_SERVICE_KEY"
-add CONSOLE_AI_DOMAIN    'lobby.aicountly.com'
+add CONSOLE_API_URL       'https://console.aicountly.org/api'
+add CONSOLE_SERVICE_KEY   "$CONSOLE_SERVICE_KEY"
+add CONSOLE_AI_DOMAIN     'lobby.aicountly.com'
 add AI_CREDENTIALS_SOURCE 'console'
-add LOBBY_TENANT_ID      'default'
+add LOBBY_TENANT_ID       'default'
 
 # A signed visitor session is required before reception will answer anyone.
 # Generated here, once, and never regenerated on a re-run.
@@ -116,10 +118,12 @@ chown -R "$OWNER:$GROUP" "$STATE"
 chmod 600 "$API/.env"            # the service key is in here
 chmod 640 "$API/knowledge.json"
 chmod 750 "$STATE"
-unset CONSOLE_SERVICE_KEY
 
 # ── 6. Ask the server whether it is actually wired up ───────────────────────
+# tools/ arrives with the next API deploy; until then this line says "No such
+# file" and everything above it has still been done correctly.
 sudo -u "$OWNER" php "$API/tools/check-console-ai.php"
+)
 ```
 
 The check prints no secret — only whether each piece is present and what Console
