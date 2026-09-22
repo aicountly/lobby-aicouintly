@@ -232,13 +232,16 @@
 
 .lobby-back {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   border: none;
   background: none;
   color: var(--lobby-emerald);
   font: inherit;
   font-size: 0.85rem;
   font-weight: 550;
-  padding: 0 0 0.5rem;
+  padding: 0 0.1rem;
   cursor: pointer;
 }
 
@@ -546,6 +549,7 @@
 .lobby-field select,
 .lobby-field textarea {
   width: 100%;
+  min-height: 44px;
   border: 1px solid var(--lobby-line);
   border-radius: 9px;
   background: #fffdf8;
@@ -685,10 +689,14 @@
 
 .lobby-chip {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  /* A suggestion is a tap target like any other: 44px, not 32. */
+  min-height: 44px;
   border: 1px solid var(--lobby-line);
   border-radius: 999px;
   background: #fffaf1;
-  padding: 0.3rem 0.7rem;
+  padding: 0 0.85rem;
   font: inherit;
   font-size: 0.8rem;
   cursor: pointer;
@@ -947,4 +955,137 @@
     top: 4.6rem;
     font-size: 0.72rem;
   }
+}
+
+/* --- the reception character's state -------------------------------------- */
+
+/*
+   One chip, two places: over the 3D view and above the transcript. It is the
+   only thing in the interface that says what the figure behind the counter is
+   doing, so it has to be legible against both the room and the panel — hence
+   the solid graphite ground rather than a tint of the surface behind it.
+*/
+.lobby-state-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(35, 40, 44, 0.86);
+  color: var(--lobby-ivory);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.lobby-state-chip::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.85;
+}
+
+.lobby-state-chip.is-listening {
+  background: var(--lobby-emerald);
+}
+
+/* Listening is the one state with a live microphone, so it is the one state
+   that pulses. Anything else animating would make that signal ordinary. */
+.lobby-state-chip.is-listening::before {
+  animation: lobby-pulse 1.4s ease-in-out infinite;
+}
+
+.lobby-state-chip.is-speaking,
+.lobby-state-chip.is-greeting,
+.lobby-state-chip.is-handover {
+  background: rgba(22, 120, 90, 0.88);
+}
+
+.lobby-state-chip.is-error {
+  background: #8a3d32;
+}
+
+@keyframes lobby-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lobby-state-chip.is-listening::before {
+    animation: none;
+  }
+}
+
+.lobby-reception-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+
+.lobby-turn.is-partial {
+  opacity: 0.62;
+  font-style: italic;
+}
+
+/* --- voice ---------------------------------------------------------------- */
+
+.lobby-voice-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--lobby-line);
+}
+
+.lobby-button-voice.is-listening {
+  background: var(--lobby-emerald);
+  border-color: var(--lobby-emerald);
+  color: var(--lobby-ivory);
+}
+
+.lobby-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  font-size: 0.9rem;
+  color: var(--lobby-ink-muted);
+  cursor: pointer;
+}
+
+.lobby-toggle input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--lobby-emerald);
+}
+
+.lobby-chip-primary {
+  background: var(--lobby-emerald);
+  border-color: var(--lobby-emerald);
+  color: var(--lobby-ivory);
+}
+
+.lobby-chip-stop {
+  border-color: #8a3d32;
+  color: #8a3d32;
+}
+
+.lobby-capability {
+  margin-top: 10px;
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+/* The state chip sits in a row of 44px buttons; matching it keeps the row from
+   stepping when the label changes length. */
+.lobby-hud-actions .lobby-state-chip {
+  min-height: 44px;
 }

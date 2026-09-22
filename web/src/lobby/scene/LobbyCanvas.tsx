@@ -19,6 +19,10 @@ import { EYE_HEIGHT, waypoint, yawTowards } from '../layout'
 import type { NavigationController } from '../navigation/controller'
 import { LOBBY_QUALITY } from '../quality'
 import type { LobbyQuality } from '../quality'
+import type { CharacterCapability } from '../reception/capability'
+import { attachMeasurementProbe, isMeasurementSession } from '../reception/measure'
+import type { CharacterMode } from '../reception/measure'
+import type { ReceptionSignal } from '../reception/signal'
 import { LobbyScene } from './LobbyScene'
 import type { TextureLoadReport } from './textureSet'
 
@@ -27,9 +31,12 @@ interface Props {
   assets: LobbyAssets
   reducedMotion: boolean
   quality: LobbyQuality
+  signal: ReceptionSignal
+  characterMode?: CharacterMode
   onOpenServices: () => void
   onContextLost: () => void
   onTexturesSettled?: (report: TextureLoadReport) => void
+  onCharacterCapability?: (capability: CharacterCapability) => void
 }
 
 export function LobbyCanvas({
@@ -37,9 +44,12 @@ export function LobbyCanvas({
   assets,
   reducedMotion,
   quality,
+  signal,
+  characterMode = 'idle',
   onOpenServices,
   onContextLost,
   onTexturesSettled,
+  onCharacterCapability,
 }: Props) {
   const start = waypoint('entrance')
   const profile = LOBBY_QUALITY[quality]
@@ -68,8 +78,19 @@ export function LobbyCanvas({
         event.preventDefault()
         onContextLost()
       })
+
+      // Only during a measurement run; see reception/measure.ts.
+      if (isMeasurementSession()) {
+        attachMeasurementProbe({
+          renderer: state.gl,
+          scene: state.scene,
+          camera: state.camera,
+          setPose: (pose) => controller.setPose(pose),
+          mode: characterMode,
+        })
+      }
     },
-    [onContextLost, start],
+    [onContextLost, start, controller, characterMode],
   )
 
   return (
@@ -79,7 +100,15 @@ export function LobbyCanvas({
       // thing the quality profile turns down.
       dpr={[1, profile.maxDpr]}
       camera={{ fov: 62, near: 0.08, far: 80, position: [start.x, EYE_HEIGHT, start.z] }}
-      gl={{ antialias: true, powerPreference: 'high-performance' }}
+      // `preserveDrawingBuffer` costs a copy every frame, so it is on only for
+      // a measurement run: without it a screenshot of a WebGL canvas comes back
+      // empty, and an empty screenshot is worse than none — it looks like
+      // evidence.
+      gl={{
+        antialias: true,
+        powerPreference: 'high-performance',
+        preserveDrawingBuffer: isMeasurementSession(),
+      }}
       onCreated={handleCreated}
     >
       <LobbyScene
@@ -87,8 +116,11 @@ export function LobbyCanvas({
         assets={assets}
         reducedMotion={reducedMotion}
         quality={quality}
+        signal={signal}
+        characterMode={characterMode}
         onOpenServices={onOpenServices}
         onTexturesSettled={onTexturesSettled}
+        onCharacterCapability={onCharacterCapability}
       />
     </Canvas>
   )

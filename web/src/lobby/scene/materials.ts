@@ -50,6 +50,13 @@ export interface LobbyMaterials {
   ivoryPanel: MeshStandardMaterial
   placeholderBody: MeshStandardMaterial
   placeholderAccent: MeshStandardMaterial
+  skin: MeshStandardMaterial
+  lip: MeshStandardMaterial
+  mouthInterior: MeshStandardMaterial
+  eyeWhite: MeshStandardMaterial
+  iris: MeshStandardMaterial
+  hair: MeshStandardMaterial
+  blouse: MeshStandardMaterial
   exterior: MeshStandardMaterial
   daylight: MeshBasicMaterial
 }
@@ -155,6 +162,20 @@ export function getMaterials(): LobbyMaterials {
 
     placeholderBody: standard({ color: '#69727b', roughness: 0.7, envMapIntensity: 0.3 }),
     placeholderAccent: standard({ color: PALETTE.emerald, roughness: 0.6, envMapIntensity: 0.35 }),
+
+    // Skin is the one surface in the room where a wrong roughness reads as a
+    // material rather than as a person: too low and it is wet plastic, too high
+    // and it is chalk. 0.72 with almost no environment is the range that still
+    // catches the desk spot across the cheekbone without shining.
+    skin: standard({ color: '#c49a79', roughness: 0.72, envMapIntensity: 0.14 }),
+    lip: standard({ color: '#96564c', roughness: 0.55, envMapIntensity: 0.2 }),
+    mouthInterior: standard({ color: '#3a2220', roughness: 0.85, envMapIntensity: 0.04 }),
+    // Not white. A pure-white sclera under a warm key light is the single
+    // clearest tell that a face was assembled rather than observed.
+    eyeWhite: standard({ color: '#ece7de', roughness: 0.28, envMapIntensity: 0.35 }),
+    iris: standard({ color: '#43342a', roughness: 0.22, envMapIntensity: 0.6 }),
+    hair: standard({ color: '#2f2822', roughness: 0.66, envMapIntensity: 0.22 }),
+    blouse: standard({ color: '#e7e1d5', roughness: 0.88, envMapIntensity: 0.16 }),
 
     exterior: standard({ color: '#cfc9bd', roughness: 0.95 }),
     daylight: new MeshBasicMaterial({ color: '#f2ece1' }),

@@ -10,14 +10,16 @@ import { useEffect, useRef } from 'react'
 
 import type { LobbyServiceAdapter } from '../services/types'
 import { ServiceCentre } from './ServiceCentre'
+import type { ReceptionBinding } from './ServiceCentre'
 
 interface Props {
   open: boolean
   adapter: LobbyServiceAdapter
+  reception: ReceptionBinding
   onClose: () => void
 }
 
-export function ServiceDialog({ open, adapter, onClose }: Props) {
+export function ServiceDialog({ open, adapter, reception, onClose }: Props) {
   const panel = useRef<HTMLDivElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
 
@@ -80,7 +82,7 @@ export function ServiceDialog({ open, adapter, onClose }: Props) {
           </button>
         </div>
         <div className="lobby-modal-body">
-          <ServiceCentre adapter={adapter} />
+          <ServiceCentre adapter={adapter} reception={reception} />
         </div>
       </div>
     </div>

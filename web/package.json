@@ -11,7 +11,11 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "preview": "vite preview",
-    "textures": "node scripts/generate-lobby-textures.mjs"
+    "textures": "node scripts/generate-lobby-textures.mjs",
+    "test:reception": "node scripts/test-reception.mjs",
+    "inspect:character": "node scripts/inspect-character.mjs",
+    "measure:avatar": "node scripts/measure-avatar-cost.mjs",
+    "test:ui": "node scripts/test-reception-ui.mjs"
   },
   "dependencies": {
     "@react-three/fiber": "^9.7.0",

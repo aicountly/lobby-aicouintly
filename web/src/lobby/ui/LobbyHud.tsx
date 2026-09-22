@@ -12,6 +12,8 @@ import { LOBBY_DISPLAY_NAME } from '../lobbyConfig'
 import type { NavigationController, NavigationSnapshot } from '../navigation/controller'
 import { QUALITY_LABELS, QUALITY_ORDER } from '../quality'
 import type { LobbyQuality } from '../quality'
+import { RECEPTION_STATE_LABELS } from '../reception/states'
+import type { ReceptionistState } from '../reception/states'
 import type { TextureLoadReport } from '../scene/textureSet'
 import { MoveControls } from './MoveControls'
 
@@ -24,6 +26,8 @@ interface Props {
   onQualityChange: (quality: LobbyQuality) => void
   /** null until the generated surface textures have settled. */
   textureReport: TextureLoadReport | null
+  /** What the character behind the counter is doing, shown without opening the panel. */
+  receptionState: ReceptionistState
   /** Host controls, rendered after the lobby's own. */
   actions?: ReactNode
 }
@@ -36,6 +40,7 @@ export function LobbyHud({
   quality,
   onQualityChange,
   textureReport,
+  receptionState,
   actions,
 }: Props) {
   const [snapshot, setSnapshot] = useState<NavigationSnapshot>({
@@ -57,6 +62,11 @@ export function LobbyHud({
           <p className="lobby-brand-sub">Visitor reception</p>
         </div>
         <div className="lobby-hud-actions">
+          {/* The figure at the counter is doing something; a visitor looking at
+              the back of the room should still be able to tell what. */}
+          <span className={`lobby-state-chip is-${receptionState}`} title="Reception">
+            {RECEPTION_STATE_LABELS[receptionState]}
+          </span>
           <button type="button" className="lobby-button lobby-button-primary" onClick={onOpenServices}>
             Reception services
           </button>

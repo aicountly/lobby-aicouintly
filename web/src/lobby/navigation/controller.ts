@@ -23,7 +23,7 @@
 import type * as THREE from 'three'
 
 import { EYE_HEIGHT, PITCH_LIMIT, WALK_SPEED, waypoint, yawTowards } from '../layout'
-import { resolveMove } from './collision'
+import { isBlocked, resolveMove } from './collision'
 
 export type MoveDirection = 'forward' | 'back' | 'left' | 'right' | 'turnLeft' | 'turnRight'
 
@@ -226,6 +226,26 @@ export class NavigationController {
       this.travel = null
     } else {
       this.buttons.delete(direction)
+    }
+    this.emit()
+  }
+
+  /**
+   * Place the visitor exactly, with no walk and no easing.
+   *
+   * Used by deep links and by the avatar cost measurement, which has to put the
+   * camera in the same place for all three configurations or the numbers are
+   * not comparable. Unlike `travelTo` this does not check a waypoint list, so
+   * the caller is responsible for picking a point that is not inside the
+   * furniture; in development it says so when they have not.
+   */
+  setPose(pose: Partial<Pose>): void {
+    this.releaseAll()
+    this.travel = null
+    this.travelId = null
+    this.pose = { ...this.pose, ...pose }
+    if (import.meta.env.DEV && isBlocked(this.pose.x, this.pose.z)) {
+      console.warn(`[lobby] setPose put the camera inside something at (${this.pose.x}, ${this.pose.z})`)
     }
     this.emit()
   }

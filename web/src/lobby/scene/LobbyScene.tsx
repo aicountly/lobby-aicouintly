@@ -10,12 +10,15 @@ import { useFrame } from '@react-three/fiber'
 import type { LobbyAssets } from '../assets/assetConfig'
 import type { NavigationController } from '../navigation/controller'
 import type { LobbyQuality } from '../quality'
+import type { CharacterCapability } from '../reception/capability'
+import type { CharacterMode } from '../reception/measure'
+import type { ReceptionSignal } from '../reception/signal'
 import type { TextureLoadReport } from './textureSet'
 import { Furnishings } from './Furnishings'
 import { Lighting } from './Lighting'
 import { OptionalModel } from './OptionalModel'
-import { PlaceholderReceptionist } from './Receptionist'
 import { ReceptionDesk } from './ReceptionDesk'
+import { ReceptionistSlot } from './ReceptionistSlot'
 import { Room } from './Room'
 import { SceneResources } from './SceneResources'
 import { Signage } from './Signage'
@@ -26,8 +29,13 @@ interface Props {
   assets: LobbyAssets
   reducedMotion: boolean
   quality: LobbyQuality
+  /** Shared with the reception conversation; read every frame, never rendered. */
+  signal: ReceptionSignal
+  /** `off` leaves the character out entirely, for the avatar cost measurement. */
+  characterMode?: CharacterMode
   onOpenServices: () => void
   onTexturesSettled?: (report: TextureLoadReport) => void
+  onCharacterCapability?: (capability: CharacterCapability) => void
 }
 
 export function LobbyScene({
@@ -35,8 +43,11 @@ export function LobbyScene({
   assets,
   reducedMotion,
   quality,
+  signal,
+  characterMode = 'idle',
   onOpenServices,
   onTexturesSettled,
+  onCharacterCapability,
 }: Props) {
   return (
     <>
@@ -59,9 +70,14 @@ export function LobbyScene({
         <WaitingLounge />
       </OptionalModel>
 
-      <OptionalModel slot={assets.receptionist} reducedMotion={reducedMotion}>
-        <PlaceholderReceptionist reducedMotion={reducedMotion} />
-      </OptionalModel>
+      {characterMode === 'off' ? null : (
+        <ReceptionistSlot
+          slot={assets.receptionist}
+          signal={signal}
+          reducedMotion={reducedMotion}
+          onCapability={onCharacterCapability}
+        />
+      )}
 
       <Furnishings />
       <Signage />

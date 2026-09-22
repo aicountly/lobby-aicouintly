@@ -254,10 +254,11 @@ export function signTexture(text: string, options: SignOptions = {}): THREE.Canv
 }
 
 /**
- * The badge worn by the placeholder receptionist.
+ * The name badge worn by the reception character.
  *
- * It says what the model is, on the model, so nobody mistakes the stand-in for
- * finished art.
+ * It says what the figure is, on the figure. The character is generated in code
+ * rather than sculpted or scanned, and the room should say so from the visitor's
+ * side of the counter rather than only in a document.
  */
 export function placeholderBadgeTexture(): THREE.CanvasTexture {
   const [element, ctx] = canvas2d(512, 256)
@@ -268,11 +269,11 @@ export function placeholderBadgeTexture(): THREE.CanvasTexture {
   ctx.fillStyle = PALETTE.graphite
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.font = "700 54px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-  ctx.fillText('PLACEHOLDER', 256, 108)
-  ctx.font = "500 36px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+  ctx.font = "700 60px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+  ctx.fillText('RECEPTION', 256, 104)
+  ctx.font = "500 34px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
   ctx.fillStyle = PALETTE.graphiteLight
-  ctx.fillText('3D receptionist', 256, 168)
+  ctx.fillText('demonstration character', 256, 170)
   return finish(element)
 }
 

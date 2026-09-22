@@ -1,9 +1,10 @@
 # Replacing the lobby's 3D placeholders
 
-Everything you can see in Aicountly Lobby is generated in the browser from
-primitives — there is not one texture or model file in the repository. That is
-deliberate: a fresh clone renders a complete, navigable room with nothing to
-download and nothing to license.
+Everything you can see in Aicountly Lobby is generated: the room from
+primitives, the surfaces from a committed texture generator, the character and
+its face from code. Not one asset in this repository was downloaded, and there
+is no model file at all. That is deliberate — a fresh clone renders a complete,
+navigable room with nothing to fetch and nothing to license.
 
 Final art replaces those placeholders **slot by slot**, at runtime, without a
 rebuild.
@@ -79,10 +80,63 @@ A visitor is a cylinder of radius **0.38 m** with eyes at **1.65 m**.
 
 ## The receptionist character
 
-The placeholder is a blocked-out figure with no face. It is a stand-in and
-nothing more: **this phase implements no facial animation, no lip-sync, no voice
-and no speech synthesis.** The requirements below describe what a final
-character must provide so those become possible, not what exists today.
+### What is shipped, and what it is not
+
+The character in the room is **generated in code**: an articulated figure with a
+procedural face whose head shell carries seventeen ARKit-named morph targets,
+built as vertex deltas over a parametric skull. Eyelids, brows, gaze and the
+mouth aperture are small meshes moved by transform. It is driven by the same
+viseme schedule a supplied glTF would be driven by, so lip-sync is exercised
+rather than declared.
+
+It is **stylised, not photoreal**. It is not scanned, sculpted or bought; it is
+a few hundred lines of geometry. It is labelled as a demonstration character on
+its badge and on a board above its head, and the reception panel states what it
+can do. Nobody should describe it as finished art, and the requirements below
+still stand in full for a character that would replace it.
+
+### Character capability assessment
+
+A bounded discovery pass was made for a licensed rigged human character. What it
+found, on the date below:
+
+| Source | Result |
+| --- | --- |
+| Poly Haven (`api.polyhaven.com`) | **Unreachable.** The build environment's egress policy refuses the CONNECT |
+| Ready Player Me (`models.readyplayer.me`) | **Unreachable**, same reason |
+| Mixamo (`mixamo.com`) | **Unreachable**, same reason |
+| Meshy (`api.meshy.ai`) | **Unreachable**, and no generation credential is configured or authorised for this repository |
+| `raw.githubusercontent.com` | **Reachable.** The only route to any asset from this build |
+
+Two licensed rigged characters were therefore obtainable, and both were
+inspected with `npm run inspect:character` rather than taken on description:
+
+| | RobotExpressive | CesiumMan |
+| --- | --- | --- |
+| Licence | CC0 1.0 (Tomás Laulhé; modifications by Don McCurdy) | CC BY 4.0 (Cesium) |
+| Size | 453 KB | 428 KB |
+| Geometry | 3,237 triangles, 3 materials | 4,672 triangles, 1 material |
+| Skeleton | 43 bones | 19 bones |
+| Clips | 14, including `Idle` and `Wave` | 1, unnamed (`animation_0`) |
+| Morph targets | 3 — `Angry`, `Surprised`, `Sad` | **none** |
+| ARKit set | 0 / 52 | 0 / 52 |
+| OVR visemes | **0 / 15** | **0 / 15** |
+| Verdict | Body clips and some expression morphs; **lip-sync not possible** | No named idle clip, no face |
+
+Neither supplies a viseme set, and neither is a human receptionist. So a
+*downloaded* character could not have delivered lip-sync in this build either —
+which is why the face is generated instead. Neither file is committed; both were
+used only to verify that the capability probe reads real glTF files correctly.
+
+**The gap is stated plainly: no licensed, rigged, photoreal human character was
+obtainable here, and the shipped figure is an interim stylised one.** When such
+a character is available, everything above it already works against
+`CharacterCapability` and the swap is a file copy plus a manifest entry.
+
+### Requirements for a replacement
+
+The requirements below describe what a final character must provide. They are
+unchanged, and they are what `npm run inspect:character` checks a file against.
 
 ### Format and budget
 
@@ -112,21 +166,31 @@ character must provide so those become possible, not what exists today.
 Clip names are mapped in the manifest's `animations` block, so they can be
 called anything; these are the **roles** the lobby knows about:
 
-| Role | Used for | Required |
+| Role | Character state it plays | Required |
 | --- | --- | --- |
-| `idle` | Standing at the counter | **Yes** — the only clip this phase plays |
-| `greet` | A visitor arriving at reception | Later phase |
-| `listen` | Visitor is typing or speaking | Later phase |
-| `speak` | Reception is answering | Later phase |
-| `gesture` | Pointing towards lounge or meeting rooms | Later phase |
+| `idle` | `idle` | **Yes** — the only clip a character must provide |
+| `greet` | `greeting` (played once, then released) | Recommended |
+| `listen` | `listening` | Recommended |
+| `think` | `processing` | Recommended |
+| `speak` | `speaking` | Recommended |
+| `gesture` | `handover` (played once, then released) | Recommended |
+| `apology` | `error` | Optional |
 | `seated` | Seated variant | Optional |
+
+A missing role falls back along a chain that terminates at `idle`
+(`CLIP_FALLBACK` in `src/lobby/assets/assetConfig.ts`), so a one-clip character
+works and a fully authored one is used in full. `greet` and `gesture` are played
+with `LoopOnce` and clamped — a greeting that loops is a character waving at
+someone who has already walked away.
 
 Every clip must loop cleanly (first and last frame identical for `idle` and
 `listen`) and be authored at 30 fps or higher.
 
 ### Facial controls
 
-Required only for a character intended to speak in a later phase:
+Required for a character intended to speak. Without them the lobby runs Mode C:
+body animation and captions, and no claim of lip-sync. See
+[RECEPTION.md](RECEPTION.md) for the three modes.
 
 - **ARKit blendshape set, all 52**, named exactly as Apple specifies
   (`jawOpen`, `mouthSmileLeft`, `browInnerUp`, …). This is the set with the
@@ -140,8 +204,11 @@ Required only for a character intended to speak in a later phase:
 ### Speech synchronisation
 
 - **Viseme set:** the 15 Oculus/OVR visemes (`sil`, `PP`, `FF`, `TH`, `DD`,
-  `kk`, `CH`, `SS`, `nn`, `RR`, `aa`, `E`, `ih`, `oh`, `ou`), supplied either as
-  additional blendshapes or as a documented mapping onto the ARKit set.
+  `kk`, `CH`, `SS`, `nn`, `RR`, `aa`, `E`, `ih`, `oh`, `ou`). Supplying them as
+  `viseme_*` blendshapes is best; **the documented mapping onto the ARKit set
+  the lobby used to ask for is now supplied by the lobby itself**
+  (`VISEME_TO_ARKIT` in `src/lobby/reception/visemes.ts`), so a character with
+  the ARKit 52 and no viseme shapes still gets all fifteen.
 - Visemes must be drivable independently of the body clips: mouth shapes will be
   applied on top of `speak`, not baked into it.
 - Head and eye bones must be animatable separately from the body for future
@@ -153,11 +220,17 @@ the `.glb` is downloadable by anyone who visits.
 
 ## Checking a replacement
 
+0. **Inspect it first.** `cd web && npm run inspect:character -- path/to/file.glb`
+   prints what the file actually contains — clips, bones, morph-target names,
+   ARKit and viseme coverage — and ends with a verdict. Configuration claiming a
+   blendshape is not evidence that one exists; this is.
 1. Drop the `.glb` into `web/public/lobby-assets/`.
 2. Point its slot at it in `manifest.json`.
 3. Reload the lobby. No rebuild, no restart.
 4. Walk the room: the piece should sit exactly where the placeholder did, and
    collision should still match what you see.
+5. Open reception and ask something. The panel's last line reports what the
+   lobby found in your file and which lip-sync mode it chose.
 
 If the model does not appear, the loader rejected it — the browser console names
 the reason, and the placeholder stays up in the meantime.
@@ -275,6 +348,8 @@ Texture scale is derived from the tile size, not guessed, so a floorboard reads
 | Leaf geometry | `scene/Foliage.tsx` | Curved, tapered ribbon with a midrib channel. Solid geometry, no alpha, so no transparent overdraw |
 | Signage / badges | `scene/textures.ts` | Canvas-drawn at runtime, system font stack, 0 bytes transferred |
 | Contact shadows | `scene/textures.ts` | 128 px radial gradient, generated at runtime |
+| The character's face | `scene/face.ts` | A parametric skull with 17 ARKit-named morph targets built as vertex deltas, plus transform-driven lids, brows, gaze and mouth. **0 bytes transferred**, and the only reason lip-sync is demonstrable at all in this build |
+| The character's hair | `scene/face.ts` | Sampled from the skull itself so it hugs it, with a hairline that is high at the brow and low at the nape. A sphere cap on the crown puts the hairline across the eyes |
 
 ## Third-party code used
 

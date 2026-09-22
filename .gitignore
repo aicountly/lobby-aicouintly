@@ -41,3 +41,8 @@ Thumbs.db
 .eslintcache
 *.tsbuildinfo
 .cache/
+
+# Measurement output. The JSON report is committed as evidence; the screenshots
+# are large, regenerate from `npm run measure:avatar`, and are not reviewable in
+# a diff.
+web/measurements/*.png
