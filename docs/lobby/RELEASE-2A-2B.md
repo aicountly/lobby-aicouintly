@@ -122,14 +122,14 @@ one.** The exact numbers, and this caveat, are in
 | | |
 | --- | --- |
 | `npm run test:reception` | **74 / 74**, ~15 s, no browser |
-| `npm run test:ui` | **16 / 16**, ~60 s |
+| `npm run test:ui` | **17 / 17**, ~60 s |
 | `npm run build` | clean, `tsc -b` clean |
 | `npm run measure:avatar` | 3 configurations, ~45 s, zero console errors in any |
 
 Both suites have hard timeouts, because a test that never resolves is
 indistinguishable from a slow one until it has already cost twenty minutes.
 
-Two real bugs the tests and screenshots caught, both fixed:
+Three real bugs the tests and screenshots caught, all fixed:
 
 1. **Patch geometry was wound the opposite way to the head**, so the lips and
    brows were back-facing and invisible. A patch wound the wrong way looks
@@ -138,6 +138,13 @@ Two real bugs the tests and screenshots caught, both fixed:
 2. **The mouth group's placement was overwritten every frame** by the rig,
    leaving the whole mouth at the centre of the skull, inside it. Split into an
    anchor that holds placement and a group the rig drives.
+3. **A character that unmounted never said so**, so switching to Standard View
+   left the panel describing the 3D figure that had just gone away — and left
+   the conversation choosing a lip-sync mode for it. Both character components
+   now report `NO_CHARACTER` on unmount, which also covers a lost graphics
+   context and `?lobbyCharacter=off`. This one surfaced as a one-in-four flake
+   in the browser suite; replacing the suite's polling with a MutationObserver
+   is what turned it from noise into a reproducible failure.
 
 Also raised: every control in the reception panel is now ≥ 44 px tall. The
 suggestion chips and the back link were 30–32 px.

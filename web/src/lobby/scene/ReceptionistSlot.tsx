@@ -19,7 +19,7 @@ import type { AnimationClip, Group, Mesh, Object3D } from 'three'
 
 import type { AssetSlot } from '../assets/assetConfig'
 import { createReceptionAnimationController } from '../reception/animationController'
-import { describeGltfCharacter } from '../reception/capability'
+import { NO_CHARACTER, describeGltfCharacter } from '../reception/capability'
 import type { CharacterCapability } from '../reception/capability'
 import { EXPRESSION_RATE, STATE_EXPRESSIONS, approachPose, emptyPose } from '../reception/expressions'
 import { createMorphFaceRig } from '../reception/faceRig'
@@ -141,8 +141,10 @@ function SuppliedCharacter({
     controller.setReducedMotion(reducedMotion)
   }, [controller, reducedMotion])
 
+  // Same as the procedural character: unmounting is a capability change too.
   useEffect(() => {
     onCapability?.(capability)
+    return () => onCapability?.(NO_CHARACTER)
   }, [capability, onCapability])
 
   useEffect(() => () => controller.dispose(), [controller])

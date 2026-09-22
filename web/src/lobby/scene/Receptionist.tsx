@@ -20,7 +20,7 @@ import type { Group } from 'three'
 
 import { RECEPTIONIST_SPOT } from '../layout'
 import { createReceptionAnimationController } from '../reception/animationController'
-import { faceCapabilityFrom, proceduralCapability } from '../reception/capability'
+import { NO_CHARACTER, faceCapabilityFrom, proceduralCapability } from '../reception/capability'
 import type { CharacterCapability } from '../reception/capability'
 import { BLINK, EXPRESSION_RATE, STATE_EXPRESSIONS, approachPose, emptyPose } from '../reception/expressions'
 import { sampleLipSync } from '../reception/lipSync'
@@ -204,8 +204,13 @@ export function ProceduralReceptionist({ signal, reducedMotion, onCapability }: 
     controller.setReducedMotion(reducedMotion)
   }, [controller, reducedMotion])
 
+  // Reporting on mount is only half of it. Switching to Standard View, losing
+  // the graphics context or turning the character off all unmount this without
+  // anything else noticing — and a panel that goes on describing a character
+  // nobody can see is a panel telling the visitor something untrue.
   useEffect(() => {
     onCapability?.(capability)
+    return () => onCapability?.(NO_CHARACTER)
   }, [capability, onCapability])
 
   useEffect(() => () => {

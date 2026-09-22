@@ -29,6 +29,26 @@ function check(name, condition, detail = '') {
   checks.push({ name, ok: Boolean(condition), detail })
 }
 
+/**
+ * Every state the chip shows, caught rather than sampled.
+ *
+ * Polling `innerText` in a loop races the thing it is measuring: `processing`
+ * lasts about 260 ms and the page is software-rendered at roughly 700 ms a
+ * frame, so a poll can step straight over it and report a failure that says
+ * nothing about the product. A MutationObserver sees every value the node ever
+ * held, however briefly.
+ */
+const WATCH_CHIP = (selector) => {
+  const node = document.querySelector(selector)
+  const seen = [node.textContent.trim()]
+  const record = () => {
+    const text = node.textContent.trim()
+    if (text && text !== seen[seen.length - 1]) seen.push(text)
+  }
+  new MutationObserver(record).observe(node, { childList: true, characterData: true, subtree: true })
+  window.__chipStates = seen
+}
+
 function loadPlaywright() {
   try {
     return require('playwright')
@@ -72,6 +92,17 @@ try {
   await chip.waitFor({ timeout: 10_000 })
   check('the panel opens with a state chip', await chip.isVisible())
 
+  // Deterministic rather than racy: if the character reported before the view
+  // switched, this waits for the reset; if the reset never happens it fails
+  // every time instead of one run in four. The bug it was written against was
+  // exactly that — the panel kept describing a character that had unmounted.
+  await page
+    .waitForFunction(
+      () => /no 3d character/i.test(document.querySelector('.lobby-capability')?.textContent ?? ''),
+      null,
+      { timeout: 8000 },
+    )
+    .catch(() => undefined)
   const capability = await page.locator('.lobby-capability').innerText()
   check(
     'Standard View says there is no character rather than describing one',
@@ -80,17 +111,16 @@ try {
   )
 
   // --- A typed question.
+  await page.evaluate(WATCH_CHIP, '.lobby-state-chip')
   await page.getByPlaceholder('Type a question…').fill('What are your opening hours?')
   await page.getByRole('button', { name: 'Ask', exact: true }).click()
-
-  const seen = new Set()
-  const deadline = Date.now() + 8000
-  while (Date.now() < deadline) {
-    seen.add((await chip.innerText()).trim())
-    if (seen.has('Answering')) break
-    await page.waitForTimeout(60)
-  }
-  check('the chip reports thinking then answering', seen.has('Thinking') && seen.has('Answering'), [...seen].join(' -> '))
+  await page.waitForFunction(() => window.__chipStates.includes('Answering'), null, { timeout: 15_000 })
+  const seen = await page.evaluate(() => window.__chipStates)
+  check(
+    'the chip reports thinking then answering',
+    seen.includes('Thinking') && seen.includes('Answering'),
+    seen.join(' -> '),
+  )
 
   await page.waitForFunction(
     () => document.querySelectorAll('.lobby-turn-reception').length >= 2,
@@ -208,22 +238,29 @@ try {
   await hudChip.waitFor({ timeout: 20_000 })
   check('the 3D view shows the character state without opening anything', (await hudChip.innerText()).trim() === 'Waiting')
 
+  await scene.evaluate(WATCH_CHIP, '.lobby-hud-actions .lobby-state-chip')
   await scene.getByRole('button', { name: 'Reception services' }).click()
   await scene.getByRole('button', { name: 'Speak to our team' }).click()
   await scene.getByPlaceholder('Type a question…').fill('What can Aicountly do?')
   await scene.getByRole('button', { name: 'Ask', exact: true }).click()
 
-  const sceneStates = new Set()
-  const until = Date.now() + 15_000
-  while (Date.now() < until) {
-    sceneStates.add((await hudChip.innerText()).trim())
-    if (sceneStates.has('Answering')) break
-    await scene.waitForTimeout(100)
-  }
+  await scene.waitForFunction(() => window.__chipStates.includes('Answering'), null, { timeout: 25_000 })
+  const sceneStates = await scene.evaluate(() => window.__chipStates)
   check(
     'asking in the panel moves the character behind the counter',
-    sceneStates.has('Answering'),
-    [...sceneStates].join(' -> '),
+    sceneStates.includes('Answering'),
+    sceneStates.join(' -> '),
+  )
+
+  // And in 3D the panel must describe the character that is actually mounted,
+  // read from a probe of it rather than from the manifest.
+  const sceneCapability = await scene.locator('.lobby-capability').innerText()
+  check(
+    'the 3D panel reports the mounted character and its lip-sync mode',
+    /procedural character/i.test(sceneCapability) &&
+      /facial controls/i.test(sceneCapability) &&
+      /scheduled from the reply text/i.test(sceneCapability),
+    sceneCapability,
   )
   check('the 3D view logged no errors', sceneErrors.length === 0, sceneErrors.join(' | '))
 } finally {
