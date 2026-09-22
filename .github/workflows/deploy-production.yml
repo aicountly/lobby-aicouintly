@@ -295,10 +295,18 @@ jobs:
           # for that api/.env. Rsync filter rules are first-match-wins, so the
           # include has to come before the broader .env.* exclude or it would
           # never be reached.
+          #
+          # knowledge.json is the same kind of file and needs the same
+          # protection: created once on the server, git-ignored, and therefore
+          # absent from this upload — which under --delete means DELETED, not
+          # left alone. It holds the tenant's approved business information, so
+          # losing it silently takes reception back to "it does not know". Only
+          # knowledge.example.json ships.
           rsync -avz --delete \
             --exclude='.env' \
             --include='.env.example' \
             --exclude='.env.*' \
+            --exclude='knowledge.json' \
             --exclude='.git*' \
             --chmod=D755,F644 \
             -e ssh \
