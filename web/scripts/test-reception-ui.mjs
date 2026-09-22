@@ -238,6 +238,28 @@ try {
   await hudChip.waitFor({ timeout: 20_000 })
   check('the 3D view shows the character state without opening anything', (await hudChip.innerText()).trim() === 'Waiting')
 
+  // Talking to the character used to be three levels down — Reception services,
+  // then Speak to our team, then Talk — which from the room meant there was no
+  // way to talk to it at all.
+  const hudButtons = await scene.locator('.lobby-hud-top button').allInnerTexts()
+  check('Talk is in the 3D view itself', hudButtons.includes('Talk'), hudButtons.join(' | '))
+
+  // And walking up to the counter has to be met with something. It used to be
+  // met with silence: the greeting only fired when a panel was opened.
+  await scene.evaluate(WATCH_CHIP, '.lobby-hud-actions .lobby-state-chip')
+  await scene.getByRole('button', { name: 'Reception', exact: true }).click()
+  await scene
+    .waitForFunction(() => Boolean(document.querySelector('.lobby-caption')), null, { timeout: 20_000 })
+    .catch(() => undefined)
+  const caption = await scene.locator('.lobby-caption').innerText().catch(() => '')
+  check(
+    'walking up to reception is greeted, with the words on screen',
+    /welcome to aicountly/i.test(caption),
+    caption.replace(/\n/g, ' | ').slice(0, 90),
+  )
+  const greetedStates = await scene.evaluate(() => window.__chipStates)
+  check('and the character plays its greeting', greetedStates.includes('Greeting you'), greetedStates.join(' -> '))
+
   await scene.evaluate(WATCH_CHIP, '.lobby-hud-actions .lobby-state-chip')
   await scene.getByRole('button', { name: 'Reception services' }).click()
   await scene.getByRole('button', { name: 'Speak to our team' }).click()

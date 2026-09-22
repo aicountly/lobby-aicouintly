@@ -690,6 +690,65 @@ function newConversation(adapter, extra = {}) {
   return { convo, sig, clock }
 }
 
+await asyncTest('the greeting is spoken, not just posed', async () => {
+  const adapter = fakeAdapter(OK_REPLY)
+  const { convo, sig, clock } = newConversation(adapter)
+  assert.equal(convo.snapshot().turns.length, 0, 'nothing is said before anyone is greeted')
+
+  convo.greet()
+  const snapshot = convo.snapshot()
+  assert.equal(sig.state, 'greeting')
+  assert.equal(snapshot.turns.length, 1)
+  assert.equal(snapshot.turns[0].role, 'reception')
+  // The mouth has to move. A character that waves with a closed mouth while its
+  // line sits in a transcript is not greeting anybody.
+  assert.equal(sig.speaking, true)
+  assert.ok(sig.timeline.length > 10, `greeting scheduled ${sig.timeline.length} mouth shapes`)
+
+  clock.advance(60_000)
+  assert.equal(sig.state, 'idle')
+  assert.equal(sig.speaking, false)
+  convo.dispose()
+})
+
+await asyncTest('greeting is silent unless the visitor turned speech on', async () => {
+  const adapter = fakeAdapter(OK_REPLY)
+  const speaker = fakeVoiceOutput()
+  const { convo } = newConversation(adapter, { voiceOutput: speaker })
+  convo.greet()
+  assert.deepEqual(speaker.state.spoken, [], 'walking in must not be met with a page that talks at you')
+  convo.dispose()
+})
+
+await asyncTest('greeting happens once, and again only on a return visit', async () => {
+  const adapter = fakeAdapter(OK_REPLY)
+  const { convo, sig, clock } = newConversation(adapter)
+  convo.greet()
+  convo.greet()
+  assert.equal(convo.snapshot().turns.length, 1, 'a second approach mid-greeting must not re-greet')
+
+  convo.greet(true)
+  assert.equal(convo.snapshot().turns.length, 1, 'nor must a forced greeting interrupt one in progress')
+
+  clock.advance(60_000)
+  assert.equal(sig.state, 'idle')
+  convo.greet(true)
+  assert.equal(convo.snapshot().turns.length, 2, 'coming back later is greeted again')
+  convo.dispose()
+})
+
+await asyncTest('a question during the greeting wins', async () => {
+  const adapter = fakeAdapter(OK_REPLY)
+  const { convo, sig } = newConversation(adapter)
+  convo.greet()
+  assert.equal(sig.state, 'greeting')
+  await convo.ask('what are your opening hours')
+  assert.equal(sig.state, 'speaking')
+  const texts = convo.snapshot().turns.map((turn) => turn.text)
+  assert.equal(texts.at(-1), OK_REPLY.data.text)
+  convo.dispose()
+})
+
 await asyncTest('a question runs thinking then speaking then idle', async () => {
   const adapter = fakeAdapter(OK_REPLY)
   const { convo, sig, clock } = newConversation(adapter)

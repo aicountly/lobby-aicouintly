@@ -61,6 +61,7 @@ export function LobbyExperience({ children, actions }: Props) {
   const [quality, setQuality] = useState<LobbyQuality>(detectInitialQuality)
   const [textureReport, setTextureReport] = useState<TextureLoadReport | null>(null)
   const [characterMode] = useState(detectCharacterMode)
+  const [openOnService, setOpenOnService] = useState<'booking' | 'enquiry' | 'team' | null>(null)
 
   const sceneRef = useRef<HTMLDivElement>(null)
 
@@ -69,8 +70,40 @@ export function LobbyExperience({ children, actions }: Props) {
   // talking receptionist ends up looking like one that does nothing.
   const openServices = useCallback(() => {
     controller.travelToPose({ ...CONVERSATION_VIEW })
+    setOpenOnService(null)
     setServicesOpen(true)
   }, [controller])
+
+  /**
+   * Talk, from the room itself.
+   *
+   * Voice was reachable only three levels down — Reception services, then Speak
+   * to our team, then Talk — which from a visitor's point of view meant it did
+   * not exist. Pressing this opens the microphone directly and leaves the
+   * character on screen, with the captions carrying the words. A browser with
+   * no speech recognition lands in the conversation instead, where the panel
+   * says why.
+   */
+  const talk = useCallback(() => {
+    if (reception.snapshot.voice.listening) {
+      reception.conversation.stopVoice()
+      return
+    }
+    if (reception.snapshot.voice.inputAvailable) {
+      controller.travelToPose({ ...CONVERSATION_VIEW })
+      void reception.conversation.startVoice()
+      return
+    }
+    controller.travelToPose({ ...CONVERSATION_VIEW })
+    setOpenOnService('team')
+    setServicesOpen(true)
+  }, [controller, reception.conversation, reception.snapshot.voice])
+
+  // Walking up to the counter is how you greet someone in a lobby. Before this,
+  // the character stood there in silence until a panel was opened.
+  const onApproachReception = useCallback(() => {
+    reception.conversation.greet(true)
+  }, [reception.conversation])
 
   const chooseQuality = useCallback((next: LobbyQuality) => {
     setQuality(next)
@@ -102,11 +135,10 @@ export function LobbyExperience({ children, actions }: Props) {
     controller.setReducedMotion(reducedMotion)
   }, [controller, reducedMotion])
 
-  // The character greets when the visitor arrives at reception — opening the
-  // panel, or landing in Standard View — and never on page load.
+  // Standard View has no room to walk through, so opening it is the arrival.
   useEffect(() => {
-    if (servicesOpen || view === 'standard') reception.conversation.greet()
-  }, [servicesOpen, view, reception.conversation])
+    if (view === 'standard') reception.conversation.greet()
+  }, [view, reception.conversation])
 
   const failTo2d = useCallback((message: string) => {
     setFallbackReason(message)
@@ -175,6 +207,7 @@ export function LobbyExperience({ children, actions }: Props) {
             onContextLost={onContextLost}
             onTexturesSettled={setTextureReport}
             onCharacterCapability={reception.reportCapability}
+            onApproachReception={onApproachReception}
           />
           <LobbyHud
             controller={controller}
@@ -183,6 +216,8 @@ export function LobbyExperience({ children, actions }: Props) {
             onQualityChange={chooseQuality}
             textureReport={textureReport}
             receptionState={reception.snapshot.state}
+            reception={reception.snapshot}
+            onTalk={talk}
             actions={actions}
             onOpenServices={openServices}
             onStandardView={() => {
@@ -197,6 +232,7 @@ export function LobbyExperience({ children, actions }: Props) {
         open={servicesOpen}
         adapter={adapter}
         reception={binding}
+        initialService={openOnService}
         onClose={() => setServicesOpen(false)}
       />
     </div>

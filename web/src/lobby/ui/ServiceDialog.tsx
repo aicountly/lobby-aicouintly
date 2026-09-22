@@ -10,16 +10,19 @@ import { useEffect, useRef } from 'react'
 
 import type { LobbyServiceAdapter } from '../services/types'
 import { ServiceCentre } from './ServiceCentre'
-import type { ReceptionBinding } from './ServiceCentre'
+import type { ReceptionBinding, ServiceKey } from './ServiceCentre'
 
 interface Props {
   open: boolean
   adapter: LobbyServiceAdapter
   reception: ReceptionBinding
+  /** Which journey to open on. The dialog unmounts when closed, so this applies
+      afresh every time it opens. */
+  initialService?: ServiceKey | null
   onClose: () => void
 }
 
-export function ServiceDialog({ open, adapter, reception, onClose }: Props) {
+export function ServiceDialog({ open, adapter, reception, initialService = null, onClose }: Props) {
   const panel = useRef<HTMLDivElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
 
@@ -82,7 +85,7 @@ export function ServiceDialog({ open, adapter, reception, onClose }: Props) {
           </button>
         </div>
         <div className="lobby-modal-body">
-          <ServiceCentre adapter={adapter} reception={reception} />
+          <ServiceCentre adapter={adapter} reception={reception} initialService={initialService} />
         </div>
       </div>
     </div>

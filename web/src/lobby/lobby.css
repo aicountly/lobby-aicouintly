@@ -1141,3 +1141,56 @@
 .lobby-hud-actions .lobby-state-chip {
   min-height: 44px;
 }
+
+/* --- captions over the room ------------------------------------------------ */
+
+/*
+   The conversation has to be legible without opening anything. It sits above
+   the movement pad and below the hint line, centred, and never takes pointer
+   events — a caption that swallows a tap on the room is worse than no caption.
+*/
+.lobby-caption {
+  position: absolute;
+  left: 50%;
+  bottom: calc(10.5rem + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  width: min(38rem, calc(100% - 2rem));
+  pointer-events: none;
+  z-index: 900;
+}
+
+.lobby-caption-line {
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  border-radius: 14px;
+  background: rgba(28, 32, 36, 0.9);
+  color: var(--lobby-ivory);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  text-align: left;
+  box-shadow: 0 14px 40px rgba(12, 15, 18, 0.35);
+}
+
+.lobby-caption-who {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.66;
+}
+
+.lobby-caption-line.is-visitor {
+  background: rgba(22, 120, 90, 0.92);
+}
+
+@media (max-width: 40rem) {
+  .lobby-caption {
+    bottom: calc(12.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .lobby-caption-line {
+    font-size: 0.88rem;
+  }
+}

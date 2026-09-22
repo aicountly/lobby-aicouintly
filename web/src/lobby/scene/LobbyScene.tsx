@@ -5,9 +5,11 @@
  * geometry underneath is the fallback rather than the design: supply art for one
  * slot and the rest of the room carries on unchanged.
  */
+import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 
 import type { LobbyAssets } from '../assets/assetConfig'
+import { RECEPTIONIST_SPOT } from '../layout'
 import type { NavigationController } from '../navigation/controller'
 import type { LobbyQuality } from '../quality'
 import type { CharacterCapability } from '../reception/capability'
@@ -36,6 +38,8 @@ interface Props {
   onOpenServices: () => void
   onTexturesSettled?: (report: TextureLoadReport) => void
   onCharacterCapability?: (capability: CharacterCapability) => void
+  /** Fired when the visitor arrives at the counter, and again on a return visit. */
+  onApproachReception?: () => void
 }
 
 export function LobbyScene({
@@ -48,6 +52,7 @@ export function LobbyScene({
   onOpenServices,
   onTexturesSettled,
   onCharacterCapability,
+  onApproachReception,
 }: Props) {
   return (
     <>
@@ -82,9 +87,42 @@ export function LobbyScene({
       <Furnishings />
       <Signage />
 
+      <ApproachWatcher onApproach={onApproachReception} />
+
       <CameraDriver controller={controller} />
     </>
   )
+}
+
+/**
+ * Fires once when the visitor reaches the counter.
+ *
+ * Hysteresis rather than a plain threshold: standing at 4.0 m and shifting
+ * weight would otherwise re-greet a visitor several times a second. It re-arms
+ * only once they have gone properly away, which is also what makes a second
+ * greeting on a second visit feel right rather than forgetful.
+ */
+function ApproachWatcher({ onApproach }: { onApproach?: () => void }) {
+  const armed = useRef(true)
+
+  useFrame((state) => {
+    if (!onApproach) return
+    const distance = Math.hypot(
+      state.camera.position.x - RECEPTIONIST_SPOT.x,
+      state.camera.position.z - RECEPTIONIST_SPOT.z,
+    )
+    // 5 m rather than 4: the "Reception" destination lands 4.40 m from the
+    // character, and the most obvious way to walk up to reception has to be one
+    // that counts as walking up to reception.
+    if (armed.current && distance < 5) {
+      armed.current = false
+      onApproach()
+    } else if (!armed.current && distance > 8) {
+      armed.current = true
+    }
+  })
+
+  return null
 }
 
 /**

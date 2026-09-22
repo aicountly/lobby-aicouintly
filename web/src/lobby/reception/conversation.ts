@@ -178,8 +178,13 @@ export interface ConversationOptions {
 export interface ReceptionConversation {
   snapshot(): ConversationSnapshot
   subscribe(listener: () => void): () => void
-  /** Play the greeting. Called when the visitor opens reception, never on load. */
-  greet(): void
+  /**
+   * Greet the visitor: wave, and say the opening line with the mouth moving.
+   *
+   * Called when the visitor walks up to the counter or opens reception — never
+   * on page load. `again` re-arms it for a visitor who left and came back.
+   */
+  greet(again?: boolean): void
   ask(text: string): Promise<void>
   startVoice(): Promise<void>
   stopVoice(): void
@@ -223,7 +228,10 @@ export function createReceptionConversation(options: ConversationOptions): Recep
   const listeners = new Set<() => void>()
 
   let reducedMotion = options.reducedMotion ?? false
-  let turns: ReceptionTurn[] = [{ role: 'reception', text: opening }]
+  // Empty until the greeting is delivered. Seeding the opening line here made
+  // it arrive before anyone was greeted, so the character had nothing to say
+  // when it finally waved.
+  let turns: ReceptionTurn[] = []
   let phase: ConversationPhase = 'idle'
   let audio: AudioPhase = voiceOutput ? 'silent' : 'unsupported'
   let suggestions: readonly string[] = starters
@@ -234,7 +242,6 @@ export function createReceptionConversation(options: ConversationOptions): Recep
   let outputEnabled = false
   let listening = false
   let greeted = false
-  let greetTimer: number | null = null
   let cached: ConversationSnapshot | null = null
   let disposed = false
 
@@ -284,7 +291,7 @@ export function createReceptionConversation(options: ConversationOptions): Recep
   function deliver(
     text: string,
     token: TurnToken,
-    phaseWhileSpeaking: 'answering' | 'handover' | 'failed',
+    phaseWhileSpeaking: 'greeting' | 'answering' | 'handover' | 'failed',
   ): void {
     turns = [...turns, { role: 'reception', text }]
 
@@ -427,21 +434,16 @@ export function createReceptionConversation(options: ConversationOptions): Recep
       return () => listeners.delete(listener)
     },
 
-    greet() {
-      if (disposed || greeted) return
+    greet(again = false) {
+      if (disposed || (greeted && !again)) return
+      // A repeat greeting while one is already running would cancel itself.
+      if (again && (phase === 'greeting' || signal.speaking)) return
       greeted = true
-      // Text only, and only because the visitor opened reception. Speech on
-      // arrival would be a page that talks at you before you have asked it to.
-      setPhase('greeting')
-      emit()
-      // The greeting owns its own timer. Hanging it off `guard.current()` only
-      // worked when a turn happened to be running, which on a fresh panel it
-      // never is — so it would outlive a disposed conversation.
-      greetTimer = setTimer(() => {
-        greetTimer = null
-        if (phase === 'greeting') setPhase('idle')
-        emit()
-      }, 1800)
+      suggestions = starters
+      // Delivered, not posed. Whether it is *heard* is a separate matter: the
+      // line is spoken aloud only if the visitor turned that on, so walking in
+      // is never met with a page that talks at you.
+      deliver(opening, guard.begin(), 'greeting')
     },
 
     async ask(text) {
@@ -568,10 +570,6 @@ export function createReceptionConversation(options: ConversationOptions): Recep
 
     dispose() {
       disposed = true
-      if (greetTimer !== null) {
-        clearTimer(greetTimer)
-        greetTimer = null
-      }
       guard.dispose()
       voiceOutput?.cancel()
       voiceInput?.stop()

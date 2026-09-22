@@ -53,10 +53,17 @@ interface Props {
    * exchange — opening the panel from 3D does not start a second one.
    */
   reception: ReceptionBinding
+  /** Open straight onto a journey, e.g. when Talk is pressed in the 3D view. */
+  initialService?: ServiceKey | null
 }
 
-export function ServiceCentre({ adapter, heading = 'How can we help?', reception }: Props) {
-  const [active, setActive] = useState<ServiceKey | null>(null)
+export function ServiceCentre({
+  adapter,
+  heading = 'How can we help?',
+  reception,
+  initialService = null,
+}: Props) {
+  const [active, setActive] = useState<ServiceKey | null>(initialService)
   const current = SERVICES.find((service) => service.key === active)
   const root = useRef<HTMLDivElement>(null)
 

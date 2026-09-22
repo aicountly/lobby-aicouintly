@@ -121,16 +121,16 @@ one.** The exact numbers, and this caveat, are in
 
 | | |
 | --- | --- |
-| `npm run test:reception` | **74 / 74**, ~15 s, no browser |
-| `npm run test:ui` | **19 / 19**, ~70 s |
+| `npm run test:reception` | **78 / 78**, ~15 s, no browser |
+| `npm run test:ui` | **22 / 22**, ~75 s |
 | `npm run build` | clean, `tsc -b` clean |
 | `npm run measure:avatar` | 3 configurations, ~45 s, zero console errors in any |
 
 Both suites have hard timeouts, because a test that never resolves is
 indistinguishable from a slow one until it has already cost twenty minutes.
 
-Four real bugs, all fixed. The first three were caught here; the fourth was
-reported from the deployed site:
+Five real defects, all fixed. The first three were caught here; the last two
+were reported from the deployed site:
 
 1. **Patch geometry was wound the opposite way to the head**, so the lips and
    brows were back-facing and invisible. A patch wound the wrong way looks
@@ -157,6 +157,15 @@ reported from the deployed site:
    visitor to `CONVERSATION_VIEW` — close to the counter and pitched down, so
    the character's head rides above the panel. Two checks now assert *where*
    the Talk button and the panel are, not just that they exist.
+5. **There was no way to talk to the character from the room, and walking up to
+   it did nothing.** Voice sat three levels down — Reception services, then
+   Speak to our team, then Talk — and the greeting only fired when a panel
+   opened, so approaching the counter was met with silence. Talk is now in the
+   3D view and opens the microphone directly; the greeting fires on approach
+   within five metres, delivered rather than posed so the mouth moves; and a
+   caption strip carries the words over the room. The wave was rebuilt too — it
+   was raising the arm forward past vertical, which laid it across the room like
+   a pole instead of waving.
 
 Also raised: every control in the reception panel is now ≥ 44 px tall. The
 suggestion chips and the back link were 30–32 px.

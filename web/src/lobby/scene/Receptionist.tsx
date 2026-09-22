@@ -131,10 +131,19 @@ function poseForRole(role: ReceptionistClip, loopTime: number, shot: number, out
       out.headNod = Math.sin(loopTime * 1.3) * 0.05
       break
     case 'greet':
-      out.shoulder[1] = 0.06 - 2.25 * arc
-      out.shoulderOut[1] = -0.3 * arc
-      out.elbow[1] = 0.5 - 1.3 * arc
-      out.elbowSwing[1] = Math.sin(shot * Math.PI * 5.5) * 0.5 * arc
+      // A wave is abduction, not flexion: the arm goes *out to the side* and up,
+      // which is rotation about Z. Raising it forward about X — as a first pass
+      // did — swings the whole arm past vertical and lays it across the room
+      // like a pole, because at −2.25 rad it is pointing up and backwards.
+      out.shoulder[1] = 0.06 - 0.28 * arc
+      // Upper arm out and a little above horizontal; the elbow's Z then carries
+      // the forearm back round to vertical. The two rotations compose, so the
+      // forearm's angle is the *sum*: −1.8 − 1.35 ≈ −π, which is straight up.
+      // Bending it the other way, as a first pass did, straightens the whole
+      // arm into a barrier across the desk.
+      out.shoulderOut[1] = -1.8 * arc
+      out.elbow[1] = 0.5 - 0.45 * arc
+      out.elbowSwing[1] = (-1.35 + Math.sin(shot * Math.PI * 5.5) * 0.35) * arc
       out.headNod = -0.05 * arc
       out.bob = Math.sin(loopTime * 0.9) * 0.008
       break
@@ -413,14 +422,14 @@ export function ProceduralReceptionist({ signal, reducedMotion, onCapability }: 
             }}
             position={[side * 0.225, 0.66, 0]}
           >
-            <Cylinder radiusTop={0.055} height={0.4} position={[0, -0.2, 0.01]} material={m.blouse} />
+            <Cylinder radiusTop={0.05} height={0.4} position={[0, -0.2, 0.01]} material={m.blouse} />
             <group
               ref={(node) => {
                 elbows.current[index] = node
               }}
               position={[0, -0.4, 0.015]}
             >
-              <Cylinder radiusTop={0.05} height={0.38} position={[0, -0.17, 0.03]} material={m.blouse} />
+              <Cylinder radiusTop={0.045} height={0.38} position={[0, -0.17, 0.03]} material={m.blouse} />
               <mesh position={[0, -0.37, 0.05]} material={m.skin} castShadow>
                 <sphereGeometry args={[0.056, 14, 12]} />
               </mesh>

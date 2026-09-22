@@ -37,6 +37,7 @@ interface Props {
   onContextLost: () => void
   onTexturesSettled?: (report: TextureLoadReport) => void
   onCharacterCapability?: (capability: CharacterCapability) => void
+  onApproachReception?: () => void
 }
 
 export function LobbyCanvas({
@@ -50,6 +51,7 @@ export function LobbyCanvas({
   onContextLost,
   onTexturesSettled,
   onCharacterCapability,
+  onApproachReception,
 }: Props) {
   const start = waypoint('entrance')
   const profile = LOBBY_QUALITY[quality]
@@ -121,6 +123,7 @@ export function LobbyCanvas({
         onOpenServices={onOpenServices}
         onTexturesSettled={onTexturesSettled}
         onCharacterCapability={onCharacterCapability}
+        onApproachReception={onApproachReception}
       />
     </Canvas>
   )

@@ -26,6 +26,27 @@ make and are not true:
 - **No audio is recorded or uploaded.** Voice uses the browser's own speech
   engine. Nothing is buffered, stored or sent anywhere.
 
+## Talking to it
+
+Two ways in, and neither needs a panel opened first:
+
+- **Walk up to the counter.** Within five metres the character waves and speaks
+  its opening line, captioned over the room. It greets once per visit and
+  re-arms when the visitor has gone properly away — eight metres — so coming
+  back later is greeted again rather than ignored.
+- **Press Talk in the 3D view.** That opens the microphone then and there, walks
+  the visitor to the counter, and leaves the character on screen while the
+  captions carry both sides. A browser with no speech recognition lands in the
+  conversation panel instead, where the reason is stated.
+
+The panel is still there for typing, for the booking and enquiry journeys, and
+for reading the transcript back. It is not the only way to talk.
+
+The captions matter beyond convenience: they are the other half of lip-sync
+Mode C. A character with no drivable mouth animates its body and its words
+appear over the room. Putting them only inside the panel — which was the first
+implementation — put them where nobody was looking.
+
 ## Three state machines, on purpose
 
 | | What it tracks | Values |

@@ -14,8 +14,10 @@ import { QUALITY_LABELS, QUALITY_ORDER } from '../quality'
 import type { LobbyQuality } from '../quality'
 import { RECEPTION_STATE_LABELS } from '../reception/states'
 import type { ReceptionistState } from '../reception/states'
+import type { ConversationSnapshot } from '../reception/conversation'
 import type { TextureLoadReport } from '../scene/textureSet'
 import { MoveControls } from './MoveControls'
+import { ReceptionCaption } from './ReceptionCaption'
 
 interface Props {
   controller: NavigationController
@@ -28,6 +30,10 @@ interface Props {
   textureReport: TextureLoadReport | null
   /** What the character behind the counter is doing, shown without opening the panel. */
   receptionState: ReceptionistState
+  /** The live conversation, so the visitor can talk without opening a panel. */
+  reception: ConversationSnapshot
+  /** Starts voice input, or opens the conversation when voice is unavailable. */
+  onTalk: () => void
   /** Host controls, rendered after the lobby's own. */
   actions?: ReactNode
 }
@@ -41,6 +47,8 @@ export function LobbyHud({
   onQualityChange,
   textureReport,
   receptionState,
+  reception,
+  onTalk,
   actions,
 }: Props) {
   const [snapshot, setSnapshot] = useState<NavigationSnapshot>({
@@ -67,6 +75,17 @@ export function LobbyHud({
           <span className={`lobby-state-chip is-${receptionState}`} title="Reception">
             {RECEPTION_STATE_LABELS[receptionState]}
           </span>
+          {/* Talking to the receptionist was three levels down — Reception
+              services, then Speak to our team, then Talk. From the room there
+              was no way to talk to the character at all. */}
+          <button
+            type="button"
+            className={`lobby-button lobby-button-voice${reception.voice.listening ? ' is-listening' : ''}`}
+            aria-pressed={reception.voice.listening}
+            onClick={onTalk}
+          >
+            {reception.voice.listening ? 'Stop listening' : 'Talk'}
+          </button>
           <button type="button" className="lobby-button lobby-button-primary" onClick={onOpenServices}>
             Reception services
           </button>
@@ -117,6 +136,8 @@ export function LobbyHud({
 
         <MoveControls controller={controller} />
       </div>
+
+      <ReceptionCaption snapshot={reception} />
 
       <SurfaceStatus report={textureReport} />
 

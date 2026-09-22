@@ -1,5 +1,5 @@
 {
-  "measuredAt": "2026-09-22T06:11:32.370Z",
+  "measuredAt": "2026-09-22T07:20:03.153Z",
   "viewport": {
     "width": 1280,
     "height": 720
@@ -24,12 +24,12 @@
       "programs": 19,
       "lights": 12,
       "shadowLights": 1,
-      "transferredBytes": 2468206,
-      "decodedBytes": 3364959,
+      "transferredBytes": 2469179,
+      "decodedBytes": 3368653,
       "requests": 22,
-      "frameMsMedian": 671.2,
-      "frameMsMin": 655.5,
-      "frameMsMax": 750.7,
+      "frameMsMedian": 678.4,
+      "frameMsMin": 660.7,
+      "frameMsMax": 758.6,
       "samples": 21,
       "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
       "drawingBuffer": [
@@ -49,12 +49,12 @@
       "programs": 24,
       "lights": 12,
       "shadowLights": 1,
-      "transferredBytes": 2468206,
-      "decodedBytes": 3364959,
+      "transferredBytes": 2469179,
+      "decodedBytes": 3368653,
       "requests": 22,
-      "frameMsMedian": 703.6,
-      "frameMsMin": 689.7,
-      "frameMsMax": 732.6,
+      "frameMsMedian": 698.7,
+      "frameMsMin": 692,
+      "frameMsMax": 712.8,
       "samples": 21,
       "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
       "drawingBuffer": [
@@ -74,12 +74,12 @@
       "programs": 24,
       "lights": 12,
       "shadowLights": 1,
-      "transferredBytes": 2468206,
-      "decodedBytes": 3364959,
+      "transferredBytes": 2469179,
+      "decodedBytes": 3368653,
       "requests": 22,
-      "frameMsMedian": 703.2,
-      "frameMsMin": 691.4,
-      "frameMsMax": 803.9,
+      "frameMsMedian": 699,
+      "frameMsMin": 689.9,
+      "frameMsMax": 786.4,
       "samples": 21,
       "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
       "drawingBuffer": [
@@ -98,15 +98,15 @@
       "textures": 3,
       "programs": 5,
       "transferredBytes": 0,
-      "frameMsMedian": 32.4,
-      "frameRatio": 1.048
+      "frameMsMedian": 20.3,
+      "frameRatio": 1.03
     },
     "speechOverIdle": {
       "drawCalls": 0,
       "triangles": 0,
       "transferredBytes": 0,
-      "frameMsMedian": -0.4,
-      "frameRatio": 0.999
+      "frameMsMedian": 0.3,
+      "frameRatio": 1
     }
   }
 }
