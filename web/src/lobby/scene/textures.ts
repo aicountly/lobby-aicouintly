@@ -254,10 +254,11 @@ export function signTexture(text: string, options: SignOptions = {}): THREE.Canv
 }
 
 /**
- * The badge worn by the placeholder receptionist.
+ * The name badge worn by the reception character.
  *
- * It says what the model is, on the model, so nobody mistakes the stand-in for
- * finished art.
+ * It says what the figure is, on the figure. The character is generated in code
+ * rather than sculpted or scanned, and the room should say so from the visitor's
+ * side of the counter rather than only in a document.
  */
 export function placeholderBadgeTexture(): THREE.CanvasTexture {
   const [element, ctx] = canvas2d(512, 256)
@@ -268,11 +269,11 @@ export function placeholderBadgeTexture(): THREE.CanvasTexture {
   ctx.fillStyle = PALETTE.graphite
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.font = "700 54px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-  ctx.fillText('PLACEHOLDER', 256, 108)
-  ctx.font = "500 36px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+  ctx.font = "700 60px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+  ctx.fillText('RECEPTION', 256, 104)
+  ctx.font = "500 34px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
   ctx.fillStyle = PALETTE.graphiteLight
-  ctx.fillText('3D receptionist', 256, 168)
+  ctx.fillText('demonstration character', 256, 170)
   return finish(element)
 }
 
@@ -306,4 +307,28 @@ function shade(hex: string, factor: number): string {
   const g = Math.min(255, Math.round(((value >> 8) & 255) * factor))
   const b = Math.min(255, Math.round((value & 255) * factor))
   return `rgb(${r},${g},${b})`
+}
+
+/**
+ * A soft round gradient, used as the alpha of the contact-shadow pools.
+ *
+ * Squared falloff rather than linear: a linear gradient reads as a flat grey
+ * disc with a visible rim, while the squared curve keeps the centre dark and
+ * lets the edge vanish.
+ */
+export function contactShadowTexture(size = 128): THREE.CanvasTexture {
+  const [element, ctx] = canvas2d(size, size)
+  const half = size / 2
+  const gradient = ctx.createRadialGradient(half, half, 0, half, half, half)
+  gradient.addColorStop(0, 'rgba(26, 22, 18, 0.85)')
+  gradient.addColorStop(0.45, 'rgba(26, 22, 18, 0.42)')
+  gradient.addColorStop(0.75, 'rgba(26, 22, 18, 0.12)')
+  gradient.addColorStop(1, 'rgba(26, 22, 18, 0)')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, size, size)
+
+  const texture = new THREE.CanvasTexture(element)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.needsUpdate = true
+  return texture
 }

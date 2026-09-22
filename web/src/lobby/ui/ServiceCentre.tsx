@@ -8,14 +8,22 @@
  */
 import { useState } from 'react'
 
+import type { CharacterCapability } from '../reception/capability'
+import type { ConversationSnapshot, ReceptionConversation } from '../reception/conversation'
 import { describeIntegrations } from '../services/registry'
 import type { LobbyServiceAdapter } from '../services/types'
 import { BookingJourney } from './journeys/BookingJourney'
 import { EnquiryJourney } from './journeys/EnquiryJourney'
-import { TeamJourney } from './journeys/TeamJourney'
+import { ReceptionChat } from './ReceptionChat'
 import { DemoBanner } from './Notices'
 
 export type ServiceKey = 'booking' | 'enquiry' | 'team'
+
+export interface ReceptionBinding {
+  conversation: ReceptionConversation
+  snapshot: ConversationSnapshot
+  capability: CharacterCapability
+}
 
 const SERVICES: { key: ServiceKey; title: string; blurb: string }[] = [
   {
@@ -39,9 +47,15 @@ interface Props {
   adapter: LobbyServiceAdapter
   /** Shown as a headline above the choices. */
   heading?: string
+  /**
+   * The live conversation. Shared with the 3D character rather than owned here,
+   * so the figure behind the counter and this panel are always the same
+   * exchange — opening the panel from 3D does not start a second one.
+   */
+  reception: ReceptionBinding
 }
 
-export function ServiceCentre({ adapter, heading = 'How can we help?' }: Props) {
+export function ServiceCentre({ adapter, heading = 'How can we help?', reception }: Props) {
   const [active, setActive] = useState<ServiceKey | null>(null)
   const current = SERVICES.find((service) => service.key === active)
 
@@ -55,9 +69,20 @@ export function ServiceCentre({ adapter, heading = 'How can we help?' }: Props) 
             ← All services
           </button>
           <h3 className="lobby-service-title">{current.title}</h3>
-          {active === 'booking' ? <BookingJourney adapter={adapter} /> : null}
-          {active === 'enquiry' ? <EnquiryJourney adapter={adapter} /> : null}
-          {active === 'team' ? <TeamJourney adapter={adapter} /> : null}
+          {active === 'booking' ? (
+            <BookingJourney adapter={adapter} onReceipt={reception.conversation.announceReceipt} />
+          ) : null}
+          {active === 'enquiry' ? (
+            <EnquiryJourney adapter={adapter} onReceipt={reception.conversation.announceReceipt} />
+          ) : null}
+          {active === 'team' ? (
+            <ReceptionChat
+              conversation={reception.conversation}
+              snapshot={reception.snapshot}
+              capability={reception.capability}
+              onOpenService={setActive}
+            />
+          ) : null}
         </>
       ) : (
         <>

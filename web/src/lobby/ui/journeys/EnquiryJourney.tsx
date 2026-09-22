@@ -24,7 +24,13 @@ const TOPICS = [
   { id: 'other', label: 'Something else' },
 ]
 
-export function EnquiryJourney({ adapter }: { adapter: LobbyServiceAdapter }) {
+export function EnquiryJourney({
+  adapter,
+  onReceipt,
+}: {
+  adapter: LobbyServiceAdapter
+  onReceipt?: (receipt: EnquiryReceipt) => void
+}) {
   const [topic, setTopic] = useState(TOPICS[0].id)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -53,7 +59,10 @@ export function EnquiryJourney({ adapter }: { adapter: LobbyServiceAdapter }) {
     setSubmitting(true)
     const outcome = await adapter.submitEnquiry({ topic, name, email, message })
     setSubmitting(false)
-    if (isOk(outcome)) setReceipt(outcome.data)
+    if (isOk(outcome)) {
+      setReceipt(outcome.data)
+      onReceipt?.(outcome.data)
+    }
     else setBlocked(outcome)
   }
 

@@ -1,13 +1,15 @@
 /**
  * Aicountly Lobby — the visitor experience.
  *
- * Holds the two things the rest of the lobby is built around: which view the
- * visitor is in (3D or Standard), and the single navigation controller that
- * owns the camera. Everything else is handed one or both.
+ * Holds the three things the rest of the lobby is built around: which view the
+ * visitor is in (3D or Standard), the single navigation controller that owns the
+ * camera, and the single reception conversation. Everything else is handed one
+ * or more of them.
  *
- * Standard View is a choice the visitor can make and also the landing place
- * when 3D is not possible, so the switch is in one place with one reason
- * attached.
+ * The conversation lives here rather than in the panel so that the figure behind
+ * the counter and the panel are always the same exchange: closing the panel,
+ * switching to Standard View and coming back does not start a second one, and
+ * cannot leave the character mid-sentence with nothing driving it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -16,8 +18,14 @@ import { LOBBY_DISPLAY_NAME } from './lobbyConfig'
 import { NavigationController } from './navigation/controller'
 import { LobbyCanvas } from './scene/LobbyCanvas'
 import { useLobbyAssets } from './assets/useLobbyAssets'
+import { detectCharacterMode, driveMeasurement } from './reception/measure'
+import { useReception } from './reception/useReception'
 import { getLobbyServices } from './services/registry'
 import { useReducedMotion } from './useReducedMotion'
+import { detectInitialQuality, rememberQuality } from './quality'
+import type { LobbyQuality } from './quality'
+import { releaseSceneResources } from './scene/resources'
+import type { TextureLoadReport } from './scene/textureSet'
 import { detectWebglSupport } from './webgl'
 import { SceneErrorBoundary } from './ui/ErrorBoundary'
 import { LobbyHud } from './ui/LobbyHud'
@@ -39,6 +47,7 @@ export function LobbyExperience({ children, actions }: Props) {
   const controller = useMemo(() => new NavigationController(), [])
   const reducedMotion = useReducedMotion()
   const { assets } = useLobbyAssets()
+  const reception = useReception({ adapter, reducedMotion })
 
   // Probed once, before the first render of the canvas, so an unsupported
   // browser never mounts a renderer it cannot use.
@@ -48,8 +57,25 @@ export function LobbyExperience({ children, actions }: Props) {
     supported ? null : 'This browser cannot run WebGL, so the 3D lobby is unavailable here.',
   )
   const [servicesOpen, setServicesOpen] = useState(false)
+  const [quality, setQuality] = useState<LobbyQuality>(detectInitialQuality)
+  const [textureReport, setTextureReport] = useState<TextureLoadReport | null>(null)
+  const [characterMode] = useState(detectCharacterMode)
 
   const sceneRef = useRef<HTMLDivElement>(null)
+
+  const chooseQuality = useCallback((next: LobbyQuality) => {
+    setQuality(next)
+    rememberQuality(next)
+  }, [])
+
+  // Textures, materials, geometry caches and the environment map are shared for
+  // the lifetime of the page rather than the canvas, so that toggling Standard
+  // View does not re-decode 2 MB of PNG. They are released once, here, when the
+  // lobby itself goes away.
+  useEffect(() => releaseSceneResources, [])
+
+  // Only does anything when ?lobbyCharacter=speaking is set; see measure.ts.
+  useEffect(() => driveMeasurement(reception.signal, characterMode), [reception.signal, characterMode])
 
   useEffect(() => {
     const element = sceneRef.current
@@ -67,6 +93,12 @@ export function LobbyExperience({ children, actions }: Props) {
     controller.setReducedMotion(reducedMotion)
   }, [controller, reducedMotion])
 
+  // The character greets when the visitor arrives at reception — opening the
+  // panel, or landing in Standard View — and never on page load.
+  useEffect(() => {
+    if (servicesOpen || view === 'standard') reception.conversation.greet()
+  }, [servicesOpen, view, reception.conversation])
+
   const failTo2d = useCallback((message: string) => {
     setFallbackReason(message)
     setView('standard')
@@ -83,9 +115,16 @@ export function LobbyExperience({ children, actions }: Props) {
     failTo2d('The browser dropped the 3D graphics context. Standard View is shown instead.')
   }, [failTo2d])
 
+  const binding = {
+    conversation: reception.conversation,
+    snapshot: reception.snapshot,
+    capability: reception.capability,
+  }
+
   const standard = (
     <StandardView
       adapter={adapter}
+      reception={binding}
       reason={fallbackReason}
       canUse3d={supported}
       actions={actions}
@@ -119,13 +158,22 @@ export function LobbyExperience({ children, actions }: Props) {
           <LobbyCanvas
             controller={controller}
             assets={assets}
+            characterMode={characterMode}
             reducedMotion={reducedMotion}
+            quality={quality}
+            signal={reception.signal}
             onOpenServices={() => setServicesOpen(true)}
             onContextLost={onContextLost}
+            onTexturesSettled={setTextureReport}
+            onCharacterCapability={reception.reportCapability}
           />
           <LobbyHud
             controller={controller}
             reducedMotion={reducedMotion}
+            quality={quality}
+            onQualityChange={chooseQuality}
+            textureReport={textureReport}
+            receptionState={reception.snapshot.state}
             actions={actions}
             onOpenServices={() => setServicesOpen(true)}
             onStandardView={() => {
@@ -139,6 +187,7 @@ export function LobbyExperience({ children, actions }: Props) {
       <ServiceDialog
         open={servicesOpen}
         adapter={adapter}
+        reception={binding}
         onClose={() => setServicesOpen(false)}
       />
     </div>

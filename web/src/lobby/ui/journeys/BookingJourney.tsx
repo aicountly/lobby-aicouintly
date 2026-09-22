@@ -29,7 +29,14 @@ function defaultDate(): string {
   return date.toISOString().slice(0, 10)
 }
 
-export function BookingJourney({ adapter }: { adapter: LobbyServiceAdapter }) {
+export function BookingJourney({
+  adapter,
+  onReceipt,
+}: {
+  adapter: LobbyServiceAdapter
+  /** Told when a receipt is produced, so reception can mention it — safely. */
+  onReceipt?: (receipt: BookingReceipt) => void
+}) {
   const [services, setServices] = useState<ServiceOption[] | null>(null)
   const [blocked, setBlocked] = useState<ServiceUnavailable | null>(null)
 
@@ -89,6 +96,7 @@ export function BookingJourney({ adapter }: { adapter: LobbyServiceAdapter }) {
     setSubmitting(false)
     if (isOk(outcome)) {
       setReceipt(outcome.data)
+      onReceipt?.(outcome.data)
       setStep('done')
     } else {
       setBlocked(outcome)

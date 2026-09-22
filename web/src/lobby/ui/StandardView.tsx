@@ -13,9 +13,11 @@ import { WAYPOINTS } from '../layout'
 import { LOBBY_DISPLAY_NAME } from '../lobbyConfig'
 import type { LobbyServiceAdapter } from '../services/types'
 import { ServiceCentre } from './ServiceCentre'
+import type { ReceptionBinding } from './ServiceCentre'
 
 interface Props {
   adapter: LobbyServiceAdapter
+  reception: ReceptionBinding
   /** Set when 3D was not a choice: unsupported, or it failed. */
   reason: string | null
   canUse3d: boolean
@@ -24,7 +26,7 @@ interface Props {
   actions?: ReactNode
 }
 
-export function StandardView({ adapter, reason, canUse3d, onEnter3d, actions }: Props) {
+export function StandardView({ adapter, reception, reason, canUse3d, onEnter3d, actions }: Props) {
   return (
     <div className="lobby-standard">
       <header className="lobby-standard-head">
@@ -49,7 +51,7 @@ export function StandardView({ adapter, reason, canUse3d, onEnter3d, actions }: 
       </header>
 
       <section className="lobby-standard-panel">
-        <ServiceCentre adapter={adapter} />
+        <ServiceCentre adapter={adapter} reception={reception} />
       </section>
 
       <section className="lobby-standard-panel">

@@ -1,197 +1,252 @@
 /**
  * Shared materials for the lobby.
  *
- * The room is roughly two hundred meshes and almost all of them are one of a
- * dozen surfaces, so the materials are built once and handed out by reference.
+ * The room is a few hundred meshes and almost all of them are one of about
+ * twenty surfaces, so the materials are built once and handed out by reference.
  * Building them per mesh would upload the same shader program over and over.
  *
- * They are created lazily on first use, because the procedural textures need a
- * DOM canvas and this module is imported by code that also runs before paint.
+ * They are created immediately with flat fallback colours and no maps, then the
+ * generated PBR maps are attached by `attachSurfaceMaps` when they finish
+ * loading. That ordering is deliberate: the visitor can walk into a fully lit,
+ * correctly coloured room on the first frame, and the surfaces sharpen a moment
+ * later. A texture that never arrives simply leaves its flat colour in place.
+ *
+ * Colour choices follow the brief's art direction — warm ivory plaster, muted
+ * oak, honed light stone, graphite, cream wool, restrained emerald. The two
+ * faults being corrected from Phase 1 are baked in here: nothing is tinted
+ * orange, and no surface is glossier than a real lacquered floor.
  */
-import * as THREE from 'three'
+import { Color, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, Vector2 } from 'three'
+import type { Material } from 'three'
 
 import { PALETTE } from '../theme'
-import { oakFloorRoughness, oakFloorTexture, plasterTexture, rugTexture } from './textures'
+import type { SurfaceId, SurfaceMaps } from './textureSet'
 
 export interface LobbyMaterials {
-  floor: THREE.MeshStandardMaterial
-  wall: THREE.MeshStandardMaterial
-  ceiling: THREE.MeshStandardMaterial
-  /** The shallow frame around each lighting coffer. */
-  ceilingReveal: THREE.MeshStandardMaterial
-  skirting: THREE.MeshStandardMaterial
-  oak: THREE.MeshStandardMaterial
-  oakLight: THREE.MeshStandardMaterial
-  oakDark: THREE.MeshStandardMaterial
-  graphite: THREE.MeshStandardMaterial
-  graphiteSoft: THREE.MeshStandardMaterial
-  metal: THREE.MeshStandardMaterial
-  emerald: THREE.MeshStandardMaterial
-  emeraldGlow: THREE.MeshStandardMaterial
-  upholstery: THREE.MeshStandardMaterial
-  upholsteryDeep: THREE.MeshStandardMaterial
-  rug: THREE.MeshStandardMaterial
-  glass: THREE.MeshPhysicalMaterial
-  lightPanel: THREE.MeshStandardMaterial
-  foliage: THREE.MeshStandardMaterial
-  foliageDeep: THREE.MeshStandardMaterial
-  pot: THREE.MeshStandardMaterial
-  /** The placeholder receptionist, deliberately not skin-toned. */
-  placeholderBody: THREE.MeshStandardMaterial
-  placeholderAccent: THREE.MeshStandardMaterial
-  /** Pale inset for the recessed wall panels. */
-  ivoryPanel: THREE.MeshStandardMaterial
-  /** Dark backing behind the oak slat wall. */
-  oakDeepPanel: THREE.MeshStandardMaterial
-  /** Paving visible through the entrance glazing. */
-  exterior: THREE.MeshStandardMaterial
-  /** Unlit bright backdrop standing in for daylight outside the doors. */
-  daylight: THREE.MeshBasicMaterial
+  floor: MeshStandardMaterial
+  wall: MeshStandardMaterial
+  ceiling: MeshStandardMaterial
+  ceilingReveal: MeshStandardMaterial
+  skirting: MeshStandardMaterial
+  /** Honed limestone: reception counter top and sills. */
+  stone: MeshStandardMaterial
+  oak: MeshStandardMaterial
+  oakLight: MeshStandardMaterial
+  oakDark: MeshStandardMaterial
+  oakDeepPanel: MeshStandardMaterial
+  graphite: MeshStandardMaterial
+  graphiteSoft: MeshStandardMaterial
+  metal: MeshStandardMaterial
+  emerald: MeshStandardMaterial
+  emeraldGlow: MeshStandardMaterial
+  upholstery: MeshStandardMaterial
+  upholsteryDeep: MeshStandardMaterial
+  rug: MeshStandardMaterial
+  glass: MeshPhysicalMaterial
+  lightPanel: MeshStandardMaterial
+  foliage: MeshStandardMaterial
+  foliageDeep: MeshStandardMaterial
+  pot: MeshStandardMaterial
+  ivoryPanel: MeshStandardMaterial
+  placeholderBody: MeshStandardMaterial
+  placeholderAccent: MeshStandardMaterial
+  skin: MeshStandardMaterial
+  lip: MeshStandardMaterial
+  mouthInterior: MeshStandardMaterial
+  eyeWhite: MeshStandardMaterial
+  iris: MeshStandardMaterial
+  hair: MeshStandardMaterial
+  blouse: MeshStandardMaterial
+  exterior: MeshStandardMaterial
+  daylight: MeshBasicMaterial
 }
 
 let cache: LobbyMaterials | null = null
 
+/**
+ * How strongly each surface picks up the generated room environment.
+ *
+ * This is the restraint dial. Plaster and cloth barely reflect anything; stone
+ * and metal do. Turning it up globally is what makes a scene look like wet
+ * plastic, so it is set per material rather than once.
+ */
+function standard(options: {
+  color: string
+  roughness: number
+  metalness?: number
+  envMapIntensity?: number
+  normalScale?: number
+}): MeshStandardMaterial {
+  const material = new MeshStandardMaterial({
+    color: options.color,
+    roughness: options.roughness,
+    metalness: options.metalness ?? 0,
+  })
+  material.envMapIntensity = options.envMapIntensity ?? 0.35
+  if (options.normalScale !== undefined) {
+    material.normalScale = new Vector2(options.normalScale, options.normalScale)
+  }
+  return material
+}
+
 export function getMaterials(): LobbyMaterials {
   if (cache) return cache
 
-  const floorMap = oakFloorTexture()
-  const floorRoughness = oakFloorRoughness()
-  const plaster = plasterTexture()
-
   cache = {
-    floor: new THREE.MeshStandardMaterial({
-      map: floorMap,
-      roughnessMap: floorRoughness,
-      // The boards are drawn at full oak saturation; this tint pulls them back
-      // to a floor you would actually specify rather than a varnished orange.
-      color: '#bfb6a6',
-      roughness: 0.62,
-      metalness: 0.02,
-    }),
-    wall: new THREE.MeshStandardMaterial({
-      map: plaster,
-      color: PALETTE.ivory,
-      roughness: 0.94,
-      metalness: 0,
-    }),
-    ceiling: new THREE.MeshStandardMaterial({
-      color: PALETTE.ivoryPale,
-      roughness: 0.96,
-      metalness: 0,
-    }),
-    ceilingReveal: new THREE.MeshStandardMaterial({
-      color: '#d8d0c2',
-      roughness: 0.95,
-      metalness: 0,
-    }),
-    skirting: new THREE.MeshStandardMaterial({
-      color: PALETTE.graphite,
-      roughness: 0.5,
-      metalness: 0.08,
-    }),
-    oak: new THREE.MeshStandardMaterial({ color: PALETTE.oak, roughness: 0.55, metalness: 0.03 }),
-    oakLight: new THREE.MeshStandardMaterial({
-      color: PALETTE.oakLight,
-      roughness: 0.52,
-      metalness: 0.03,
-    }),
-    oakDark: new THREE.MeshStandardMaterial({
-      color: PALETTE.oakDark,
-      roughness: 0.6,
-      metalness: 0.03,
-    }),
-    graphite: new THREE.MeshStandardMaterial({
-      color: PALETTE.graphite,
-      roughness: 0.46,
-      metalness: 0.12,
-    }),
-    graphiteSoft: new THREE.MeshStandardMaterial({
-      color: PALETTE.graphiteSoft,
-      roughness: 0.6,
-      metalness: 0.08,
-    }),
-    metal: new THREE.MeshStandardMaterial({
-      color: '#9aa2a8',
-      roughness: 0.28,
-      metalness: 0.85,
-    }),
-    emerald: new THREE.MeshStandardMaterial({
-      color: PALETTE.emerald,
-      roughness: 0.4,
-      metalness: 0.15,
-    }),
-    emeraldGlow: new THREE.MeshStandardMaterial({
-      color: PALETTE.emeraldBright,
-      emissive: PALETTE.emeraldBright,
-      emissiveIntensity: 0.85,
-      roughness: 0.5,
-    }),
-    upholstery: new THREE.MeshStandardMaterial({
-      color: '#cbb9a0',
-      roughness: 0.92,
-      metalness: 0,
-    }),
-    upholsteryDeep: new THREE.MeshStandardMaterial({
-      color: '#4e5861',
-      roughness: 0.9,
-      metalness: 0,
-    }),
-    rug: new THREE.MeshStandardMaterial({ map: rugTexture(), roughness: 0.98, metalness: 0 }),
-    glass: new THREE.MeshPhysicalMaterial({
-      color: PALETTE.glass,
-      transparent: true,
-      opacity: 0.22,
-      roughness: 0.06,
-      metalness: 0,
-      transmission: 0,
-      side: THREE.DoubleSide,
-    }),
-    lightPanel: new THREE.MeshStandardMaterial({
-      color: '#fff6e8',
-      emissive: '#fff1dc',
-      emissiveIntensity: 0.95,
-      roughness: 1,
-    }),
-    foliage: new THREE.MeshStandardMaterial({
-      color: PALETTE.foliage,
-      roughness: 0.85,
-      metalness: 0,
-      side: THREE.DoubleSide,
-    }),
-    foliageDeep: new THREE.MeshStandardMaterial({
-      color: PALETTE.foliageDeep,
-      roughness: 0.85,
-      metalness: 0,
-      side: THREE.DoubleSide,
-    }),
-    pot: new THREE.MeshStandardMaterial({ color: '#8d8578', roughness: 0.8, metalness: 0.04 }),
-    placeholderBody: new THREE.MeshStandardMaterial({
-      color: '#5d666e',
-      roughness: 0.72,
-      metalness: 0.04,
-    }),
-    placeholderAccent: new THREE.MeshStandardMaterial({
-      color: PALETTE.emerald,
-      roughness: 0.6,
-      metalness: 0.06,
-    }),
-    ivoryPanel: new THREE.MeshStandardMaterial({
-      color: PALETTE.ivoryPale,
-      roughness: 0.9,
-      metalness: 0,
-    }),
-    oakDeepPanel: new THREE.MeshStandardMaterial({
-      color: PALETTE.oakDeep,
-      roughness: 0.7,
-      metalness: 0.02,
-    }),
-    exterior: new THREE.MeshStandardMaterial({
-      color: '#d6d0c4',
-      roughness: 0.95,
-      metalness: 0,
-    }),
-    daylight: new THREE.MeshBasicMaterial({ color: '#f6eddd' }),
+    // Satin lacquered oak. Roughness comes from the map once it loads; this
+    // floor value is already matte enough that the specular sweep across the
+    // middle of the room never returns.
+    floor: standard({ color: '#b0977a', roughness: 0.62, envMapIntensity: 0.28, normalScale: 0.6 }),
+    wall: standard({ color: PALETTE.ivory, roughness: 0.95, envMapIntensity: 0.16, normalScale: 0.35 }),
+    ceiling: standard({ color: '#e4ddd1', roughness: 0.97, envMapIntensity: 0.1 }),
+    ceilingReveal: standard({ color: '#ddd6ca', roughness: 0.94, envMapIntensity: 0.14 }),
+    skirting: standard({ color: '#3a4149', roughness: 0.42, metalness: 0.1, envMapIntensity: 0.5 }),
+
+    stone: standard({ color: '#d4cdc1', roughness: 0.5, metalness: 0.02, envMapIntensity: 0.5, normalScale: 0.4 }),
+
+    oak: standard({ color: '#a68a68', roughness: 0.5, envMapIntensity: 0.3, normalScale: 0.5 }),
+    oakLight: standard({ color: '#c0a582', roughness: 0.52, envMapIntensity: 0.28, normalScale: 0.45 }),
+    oakDark: standard({ color: '#7d6448', roughness: 0.55, envMapIntensity: 0.26, normalScale: 0.45 }),
+    oakDeepPanel: standard({ color: '#5f4a34', roughness: 0.62, envMapIntensity: 0.22 }),
+
+    graphite: standard({ color: '#32383e', roughness: 0.44, metalness: 0.12, envMapIntensity: 0.55 }),
+    graphiteSoft: standard({ color: '#464f57', roughness: 0.58, metalness: 0.06, envMapIntensity: 0.45 }),
+    // Brushed, not chrome: high metalness with real roughness so it catches a
+    // soft band of light instead of a mirror image.
+    metal: standard({ color: '#adb3b8', roughness: 0.32, metalness: 0.9, envMapIntensity: 1 }),
+
+    emerald: standard({ color: PALETTE.emerald, roughness: 0.48, metalness: 0.08, envMapIntensity: 0.4 }),
+    emeraldGlow: (() => {
+      const m = standard({ color: PALETTE.emeraldBright, roughness: 0.5 })
+      m.emissive = new Color(PALETTE.emeraldBright)
+      m.emissiveIntensity = 0.35
+      return m
+    })(),
+
+    upholstery: standard({ color: '#c7bba6', roughness: 0.92, envMapIntensity: 0.12, normalScale: 1 }),
+    upholsteryDeep: standard({ color: '#59626d', roughness: 0.9, envMapIntensity: 0.12, normalScale: 1 }),
+    rug: standard({ color: '#bdb3a0', roughness: 0.95, envMapIntensity: 0.08, normalScale: 0.8 }),
+
+    // Architectural glazing. Subtle reflection from the environment, low
+    // opacity, and no transmission at the default profile — overlapping
+    // transmissive panes sort badly and cost a scene re-render each.
+    glass: (() => {
+      const m = new MeshPhysicalMaterial({
+        color: '#cdd8d6',
+        transparent: true,
+        opacity: 0.16,
+        roughness: 0.05,
+        metalness: 0,
+        transmission: 0,
+        reflectivity: 0.5,
+        depthWrite: false,
+      })
+      m.envMapIntensity = 1.1
+      return m
+    })(),
+
+    // A fixture diffuser, not a light source. The emissive here is a fraction
+    // of Phase 1's: the giant glowing ceiling rectangles are replaced by slim
+    // fittings, and the actual illumination comes from real lights.
+    lightPanel: (() => {
+      const m = standard({ color: '#fff8ec', roughness: 1 })
+      m.emissive = new Color('#fff3e0')
+      m.emissiveIntensity = 0.3
+      return m
+    })(),
+
+    foliage: standard({ color: '#4a7355', roughness: 0.78, envMapIntensity: 0.2 }),
+    foliageDeep: standard({ color: '#35563f', roughness: 0.8, envMapIntensity: 0.18 }),
+    pot: standard({ color: '#9a9184', roughness: 0.82, envMapIntensity: 0.25 }),
+    ivoryPanel: standard({ color: '#f3ede3', roughness: 0.9, envMapIntensity: 0.15 }),
+
+    placeholderBody: standard({ color: '#69727b', roughness: 0.7, envMapIntensity: 0.3 }),
+    placeholderAccent: standard({ color: PALETTE.emerald, roughness: 0.6, envMapIntensity: 0.35 }),
+
+    // Skin is the one surface in the room where a wrong roughness reads as a
+    // material rather than as a person: too low and it is wet plastic, too high
+    // and it is chalk. 0.72 with almost no environment is the range that still
+    // catches the desk spot across the cheekbone without shining.
+    skin: standard({ color: '#c49a79', roughness: 0.72, envMapIntensity: 0.14 }),
+    lip: standard({ color: '#96564c', roughness: 0.55, envMapIntensity: 0.2 }),
+    mouthInterior: standard({ color: '#3a2220', roughness: 0.85, envMapIntensity: 0.04 }),
+    // Not white. A pure-white sclera under a warm key light is the single
+    // clearest tell that a face was assembled rather than observed.
+    eyeWhite: standard({ color: '#ece7de', roughness: 0.28, envMapIntensity: 0.35 }),
+    iris: standard({ color: '#43342a', roughness: 0.22, envMapIntensity: 0.6 }),
+    hair: standard({ color: '#2f2822', roughness: 0.66, envMapIntensity: 0.22 }),
+    blouse: standard({ color: '#e7e1d5', roughness: 0.88, envMapIntensity: 0.16 }),
+
+    exterior: standard({ color: '#cfc9bd', roughness: 0.95 }),
+    daylight: new MeshBasicMaterial({ color: '#f2ece1' }),
   }
 
   return cache
+}
+
+/**
+ * Tint applied on top of a surface's base-colour map.
+ *
+ * White means "the texture is the colour". The rest are how one map serves
+ * several tones — a single veneer map covers three timber shades, and the one
+ * woven-fabric map covers both the cream cushions and the darker frame they sit
+ * on. Getting this wrong flattens the room: a blanket white here is what made
+ * the sofa frame, the seat cushions and the rug all read as the same cream.
+ */
+const SURFACE_TINTS: Partial<Record<keyof LobbyMaterials, string>> = {
+  oakLight: '#d8c6a8',
+  oakDark: '#9d8163',
+  upholsteryDeep: '#6e7885',
+  rug: '#b6ac98',
+}
+
+/** Which surface's maps go on which materials. */
+const SURFACE_TARGETS: Record<SurfaceId, (keyof LobbyMaterials)[]> = {
+  oakFloor: ['floor'],
+  oakVeneer: ['oak', 'oakLight', 'oakDark'],
+  plaster: ['wall'],
+  fabric: ['upholstery', 'upholsteryDeep'],
+  stone: ['stone'],
+  rug: ['rug'],
+}
+
+/**
+ * Attach loaded maps to the materials that use them.
+ *
+ * Base colour replaces the flat tint, so the material colour goes white to
+ * avoid multiplying the texture twice. A surface whose map failed to load keeps
+ * its flat colour and simply looks plainer.
+ */
+export function attachSurfaceMaps(maps: Record<SurfaceId, SurfaceMaps>): void {
+  const materials = getMaterials()
+
+  for (const [surfaceId, targets] of Object.entries(SURFACE_TARGETS) as [
+    SurfaceId,
+    (keyof LobbyMaterials)[],
+  ][]) {
+    const surface = maps[surfaceId]
+    if (!surface) continue
+
+    for (const target of targets) {
+      const material = materials[target]
+      if (!(material instanceof MeshStandardMaterial)) continue
+
+      if (surface.map) {
+        material.map = surface.map
+        // The base tint now lives in the texture, so anything without an entry
+        // in SURFACE_TINTS goes white to avoid multiplying the colour twice.
+        material.color = new Color(SURFACE_TINTS[target] ?? '#ffffff')
+      }
+      if (surface.normalMap) material.normalMap = surface.normalMap
+      if (surface.roughnessMap) material.roughnessMap = surface.roughnessMap
+      material.needsUpdate = true
+    }
+  }
+}
+
+/** Release every material this module owns. */
+export function disposeMaterials(): void {
+  if (!cache) return
+  for (const material of Object.values(cache) as Material[]) material.dispose()
+  cache = null
 }
