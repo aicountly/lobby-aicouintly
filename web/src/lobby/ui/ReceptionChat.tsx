@@ -17,6 +17,7 @@ import type { FormEvent } from 'react'
 import { describeLipSyncMode, summariseCapability } from '../reception/capability'
 import type { CharacterCapability } from '../reception/capability'
 import type { ConversationSnapshot, ReceptionConversation, ServiceShortcutKey } from '../reception/conversation'
+import { rememberVoiceOutput } from '../reception/speech'
 import { RECEPTION_STATE_ANNOUNCEMENTS, RECEPTION_STATE_LABELS } from '../reception/states'
 import { UnavailableNotice } from './Notices'
 
@@ -56,10 +57,13 @@ export function ReceptionChat({ conversation, snapshot, capability, onOpenServic
 
   return (
     <div data-lobby-form>
-      <p className="lobby-field-help">
-        Replies are matched from your question by keyword — there is no AI model connected to this
-        demonstration. Voice uses your browser’s own speech engine, so nothing is uploaded and no
-        recording is kept. Nothing here is booked, sent or stored.
+      {/* Short at the top, in full at the bottom. The controls have to be the
+          first thing in the panel: when the long version led, Talk was 285 px
+          below the fold on a phone and the feature may as well not have
+          existed. */}
+      <p className="lobby-field-help lobby-disclosure-short">
+        Scripted replies, matched by keyword — no AI model is connected. Nothing is booked, sent or
+        stored.
       </p>
 
       <div className="lobby-reception-status">
@@ -72,6 +76,37 @@ export function ReceptionChat({ conversation, snapshot, capability, onOpenServic
             Stop
           </button>
         ) : null}
+
+        <div className="lobby-voice-row">
+          {voice.inputAvailable ? (
+            <button
+              type="button"
+              className={`lobby-button lobby-button-voice${voice.listening ? ' is-listening' : ''}`}
+              aria-pressed={voice.listening}
+              onClick={() => (voice.listening ? conversation.stopVoice() : void conversation.startVoice())}
+            >
+              {voice.listening ? 'Stop listening' : 'Talk'}
+            </button>
+          ) : (
+            <p className="lobby-field-help">{voice.inputReason ?? 'Voice input is unavailable here.'}</p>
+          )}
+
+          {voice.outputAvailable ? (
+            <label className="lobby-toggle">
+              <input
+                type="checkbox"
+                checked={voice.outputEnabled}
+                onChange={(event) => {
+                  conversation.setVoiceOutput(event.target.checked)
+                  rememberVoiceOutput(event.target.checked)
+                }}
+              />
+              <span>Read replies aloud</span>
+            </label>
+          ) : (
+            <p className="lobby-field-help">{voice.outputReason ?? 'Speech output is unavailable here.'}</p>
+          )}
+        </div>
       </div>
 
       <div className="lobby-transcript" ref={transcript} aria-live="polite" aria-label="Conversation">
@@ -142,38 +177,18 @@ export function ReceptionChat({ conversation, snapshot, capability, onOpenServic
         </button>
       </form>
 
-      <div className="lobby-voice-row">
-        {voice.inputAvailable ? (
-          <button
-            type="button"
-            className={`lobby-button lobby-button-voice${voice.listening ? ' is-listening' : ''}`}
-            aria-pressed={voice.listening}
-            onClick={() => (voice.listening ? conversation.stopVoice() : void conversation.startVoice())}
-          >
-            {voice.listening ? 'Stop listening' : 'Talk'}
-          </button>
-        ) : (
-          <p className="lobby-field-help">{voice.inputReason ?? 'Voice input is unavailable here.'}</p>
-        )}
-
-        {voice.outputAvailable ? (
-          <label className="lobby-toggle">
-            <input
-              type="checkbox"
-              checked={voice.outputEnabled}
-              onChange={(event) => conversation.setVoiceOutput(event.target.checked)}
-            />
-            <span>Read replies aloud</span>
-          </label>
-        ) : (
-          <p className="lobby-field-help">{voice.outputReason ?? 'Speech output is unavailable here.'}</p>
-        )}
+      {/* Small print, not hidden print. It is below the controls because that is
+          where there is room for it, and it is still on the page. */}
+      <div className="lobby-disclosure">
+        <p className="lobby-field-help">
+          Voice uses your browser’s own speech engine, so no audio leaves this device and no
+          recording is kept. Your microphone is only opened when you press Talk.
+        </p>
+        <p className="lobby-field-help lobby-capability">
+          {summariseCapability(capability, snapshot.lipSync)}{' '}
+          {capability.mounted ? describeLipSyncMode(snapshot.lipSync) : null}
+        </p>
       </div>
-
-      <p className="lobby-field-help lobby-capability">
-        {summariseCapability(capability, snapshot.lipSync)}{' '}
-        {capability.mounted ? describeLipSyncMode(snapshot.lipSync) : null}
-      </p>
     </div>
   )
 }

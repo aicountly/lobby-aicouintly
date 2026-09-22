@@ -263,6 +263,41 @@ try {
     sceneCapability,
   )
   check('the 3D view logged no errors', sceneErrors.length === 0, sceneErrors.join(' | '))
+
+  // --- The defect this section exists for.
+  //
+  // Talk was rendered 285 px below the fold of a scrolling panel, and a centred
+  // modal covered the character completely. Both were reported as "there is no
+  // Talk button and the character is not speaking", which is exactly what they
+  // looked like. Neither is visible to a DOM assertion that only asks whether
+  // an element exists, so these ask where it is.
+  await scene.setViewportSize({ width: 414, height: 800 })
+  await scene.waitForTimeout(800)
+  const framing = await scene.evaluate(() => {
+    const talk = [...document.querySelectorAll('button')].find((button) =>
+      ['Talk', 'Stop listening'].includes(button.textContent.trim()),
+    )
+    const panel = document.querySelector('.lobby-modal')
+    const t = talk?.getBoundingClientRect()
+    const p = panel?.getBoundingClientRect()
+    return {
+      talkPresent: Boolean(talk),
+      talkVisible: t ? t.top >= 0 && t.bottom <= window.innerHeight : false,
+      talkTop: t ? Math.round(t.top) : null,
+      panelTop: p ? Math.round(p.top) : null,
+      viewport: window.innerHeight,
+    }
+  })
+  check(
+    'Talk is reachable without scrolling on a phone',
+    framing.talkPresent && framing.talkVisible,
+    `talk at ${framing.talkTop} of ${framing.viewport}`,
+  )
+  check(
+    'the panel leaves the character visible above it',
+    framing.panelTop !== null && framing.panelTop > framing.viewport * 0.3,
+    `panel starts at ${framing.panelTop} of ${framing.viewport}`,
+  )
 } finally {
   clearTimeout(watchdog)
   await browser.close()

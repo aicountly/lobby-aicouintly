@@ -122,14 +122,15 @@ one.** The exact numbers, and this caveat, are in
 | | |
 | --- | --- |
 | `npm run test:reception` | **74 / 74**, ~15 s, no browser |
-| `npm run test:ui` | **17 / 17**, ~60 s |
+| `npm run test:ui` | **19 / 19**, ~70 s |
 | `npm run build` | clean, `tsc -b` clean |
 | `npm run measure:avatar` | 3 configurations, ~45 s, zero console errors in any |
 
 Both suites have hard timeouts, because a test that never resolves is
 indistinguishable from a slow one until it has already cost twenty minutes.
 
-Three real bugs the tests and screenshots caught, all fixed:
+Four real bugs, all fixed. The first three were caught here; the fourth was
+reported from the deployed site:
 
 1. **Patch geometry was wound the opposite way to the head**, so the lips and
    brows were back-facing and invisible. A patch wound the wrong way looks
@@ -145,6 +146,17 @@ Three real bugs the tests and screenshots caught, all fixed:
    context and `?lobbyCharacter=off`. This one surfaced as a one-in-four flake
    in the browser suite; replacing the suite's polling with a MutationObserver
    is what turned it from noise into a reproducible failure.
+4. **The conversation panel hid the character and buried the Talk button.** A
+   centred modal with a blurred backdrop covered the receptionist completely,
+   and the voice controls sat below the transcript — 285 px below the fold of a
+   scrolling panel on a phone. An animated character you cannot see, and a
+   microphone button you cannot reach, are indistinguishable from neither
+   existing, and that is how it was reported. The panel is now a sheet (bottom
+   on a phone, docked left on a wide screen, light scrim, no blur), the voice
+   controls sit in the control row at the top, and opening reception walks the
+   visitor to `CONVERSATION_VIEW` — close to the counter and pitched down, so
+   the character's head rides above the panel. Two checks now assert *where*
+   the Talk button and the panel are, not just that they exist.
 
 Also raised: every control in the reception panel is now ≥ 44 px tall. The
 suggestion chips and the back link were 30–32 px.

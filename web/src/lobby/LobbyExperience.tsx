@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
+import { CONVERSATION_VIEW } from './layout'
 import { LOBBY_DISPLAY_NAME } from './lobbyConfig'
 import { NavigationController } from './navigation/controller'
 import { LobbyCanvas } from './scene/LobbyCanvas'
@@ -62,6 +63,14 @@ export function LobbyExperience({ children, actions }: Props) {
   const [characterMode] = useState(detectCharacterMode)
 
   const sceneRef = useRef<HTMLDivElement>(null)
+
+  // Opening reception should put you at reception. From the entrance the
+  // character is twelve metres away and behind the panel, which is how a
+  // talking receptionist ends up looking like one that does nothing.
+  const openServices = useCallback(() => {
+    controller.travelToPose({ ...CONVERSATION_VIEW })
+    setServicesOpen(true)
+  }, [controller])
 
   const chooseQuality = useCallback((next: LobbyQuality) => {
     setQuality(next)
@@ -162,7 +171,7 @@ export function LobbyExperience({ children, actions }: Props) {
             reducedMotion={reducedMotion}
             quality={quality}
             signal={reception.signal}
-            onOpenServices={() => setServicesOpen(true)}
+            onOpenServices={openServices}
             onContextLost={onContextLost}
             onTexturesSettled={setTextureReport}
             onCharacterCapability={reception.reportCapability}
@@ -175,7 +184,7 @@ export function LobbyExperience({ children, actions }: Props) {
             textureReport={textureReport}
             receptionState={reception.snapshot.state}
             actions={actions}
-            onOpenServices={() => setServicesOpen(true)}
+            onOpenServices={openServices}
             onStandardView={() => {
               setFallbackReason(null)
               setView('standard')

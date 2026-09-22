@@ -333,27 +333,55 @@
 
 /* --- modal ---------------------------------------------------------------- */
 
+/*
+   The panel must not hide the thing it is about.
+
+   Centred, full-width and blurred, this covered the receptionist completely —
+   so a visitor asking a question could not see the character answer it, which
+   is the entire point of the character. It is now a sheet: anchored to the
+   bottom on a phone, docked to the left on a wide screen (the counter sits
+   right of centre), with a light scrim instead of a blur so the room stays
+   legible behind it.
+*/
 .lobby-modal-backdrop {
   position: fixed;
   inset: 0;
   z-index: 1200;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  background: rgba(16, 19, 22, 0.55);
-  backdrop-filter: blur(3px);
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 0.75rem;
+  background: rgba(16, 19, 22, 0.3);
 }
 
 .lobby-modal {
-  width: min(34rem, 100%);
-  max-height: min(42rem, calc(100dvh - 2rem));
+  width: min(31rem, 100%);
+  /* Leaves the top ~44% of a phone screen showing the character's head, which
+     is where CONVERSATION_VIEW puts it. */
+  max-height: min(56dvh, calc(100dvh - 1.5rem));
   display: flex;
   flex-direction: column;
   background: var(--lobby-panel-solid);
   border-radius: 18px;
   box-shadow: 0 30px 80px rgba(12, 15, 18, 0.45);
   overflow: hidden;
+}
+
+@media (min-width: 60rem) and (min-height: 38rem) {
+  .lobby-modal-backdrop {
+    align-items: center;
+    padding: 1.25rem;
+  }
+
+  .lobby-modal {
+    max-height: min(42rem, calc(100dvh - 2.5rem));
+  }
+}
+
+/* Standard View has no character behind the panel, so nothing to keep clear. */
+.lobby-root-standard .lobby-modal-backdrop {
+  align-items: center;
+  justify-content: center;
 }
 
 .lobby-modal-head {
@@ -427,10 +455,12 @@
 .lobby-demo-banner {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: 0.45rem;
   flex-wrap: wrap;
-  margin: 0 0 1rem;
-  padding: 0.6rem 0.75rem;
+  margin: 0 0 0.7rem;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.79rem;
+  line-height: 1.35;
   border-radius: 10px;
   background: rgba(22, 120, 90, 0.1);
   border: 1px solid rgba(22, 120, 90, 0.28);
@@ -1035,14 +1065,36 @@
 
 /* --- voice ---------------------------------------------------------------- */
 
+/* Sits in the control row at the top of the panel, not below the transcript. */
 .lobby-voice-row {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   flex-wrap: wrap;
-  margin-top: 12px;
+}
+
+.lobby-voice-row .lobby-field-help {
+  margin: 0;
+  flex: 1 1 12rem;
+}
+
+.lobby-reception-status {
+  row-gap: 8px;
+}
+
+.lobby-disclosure-short {
+  margin-bottom: 0.7rem;
+}
+
+.lobby-disclosure {
+  margin-top: 14px;
   padding-top: 12px;
   border-top: 1px solid var(--lobby-line);
+}
+
+.lobby-disclosure .lobby-field-help {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
 }
 
 .lobby-button-voice.is-listening {

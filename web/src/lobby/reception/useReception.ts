@@ -15,7 +15,7 @@ import { createReceptionConversation } from './conversation'
 import type { ConversationSnapshot, ReceptionConversation } from './conversation'
 import type { ReceptionSignal } from './signal'
 import { createReceptionSignal } from './signal'
-import { createVoiceInput, createVoiceOutput, detectSpeechSupport } from './speech'
+import { createVoiceInput, createVoiceOutput, detectSpeechSupport, recallVoiceOutput } from './speech'
 
 export interface UseReceptionOptions {
   adapter: LobbyServiceAdapter
@@ -67,6 +67,13 @@ export function useReception({ adapter, reducedMotion }: UseReceptionOptions): R
   useEffect(() => {
     conversation.setReducedMotion(reducedMotion)
   }, [conversation, reducedMotion])
+
+  // Restore the visitor's own earlier choice, and only theirs. This can never
+  // turn speech on by itself: `recallVoiceOutput` returns false unless someone
+  // ticked the box on this device before.
+  useEffect(() => {
+    if (recallVoiceOutput()) conversation.setVoiceOutput(true)
+  }, [conversation])
 
   // Everything in flight stops when the lobby goes away: the microphone, the
   // speaker, the pending adapter call.

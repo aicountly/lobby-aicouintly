@@ -175,6 +175,21 @@ export const CEILING_PANELS = [
   { x: 0, z: 6, width: 6.4, depth: 1 },
 ] as const
 
+/**
+ * Where a visitor stands to talk to reception.
+ *
+ * Not the `reception` waypoint, which stops three metres back so the counter
+ * does not fill the frame. Talking to the character is a different shot: close
+ * enough that a 23 cm head is legible, and pitched *down* so the head rides
+ * high in the frame and the conversation panel can sit under it without
+ * covering the face. Looking up would push the head towards the middle, which
+ * is exactly where the panel is.
+ *
+ * z −4.15 leaves the visitor's 0.38 m radius 0.17 m clear of the counter
+ * collider at z −4.7.
+ */
+export const CONVERSATION_VIEW = { x: 1.3, z: -4.15, yaw: 0, pitch: -0.17 } as const
+
 /** Where the placeholder receptionist stands, behind the counter. */
 export const RECEPTIONIST_SPOT = { x: 1.3, z: -6.1, facing: 0 } as const
 

@@ -253,17 +253,30 @@ export class NavigationController {
   /** Walk to a named destination, easing unless reduced motion is asked for. */
   travelTo(id: string): void {
     const target = waypoint(id)
-    const to: Pose = {
-      x: target.x,
-      z: target.z,
-      yaw: yawTowards(target.x, target.z, target.lookAtX, target.lookAtZ),
-      pitch: 0,
-    }
+    this.travelToPose(
+      {
+        x: target.x,
+        z: target.z,
+        yaw: yawTowards(target.x, target.z, target.lookAtX, target.lookAtZ),
+        pitch: 0,
+      },
+      id,
+    )
+  }
 
+  /**
+   * Ease to an arbitrary pose.
+   *
+   * Waypoints cover the places a visitor asks to go; this covers the places the
+   * lobby needs to put them — opening reception has to frame the character, and
+   * that is a pose rather than a destination, so it carries a pitch and does not
+   * appear in the destination list.
+   */
+  travelToPose(to: Pose, id: string | null = null): void {
     this.releaseAll()
 
     if (this.reducedMotion) {
-      this.pose = to
+      this.pose = { ...to }
       this.travel = null
       this.travelId = null
       this.emit()
@@ -271,7 +284,7 @@ export class NavigationController {
     }
 
     this.travelId = id
-    this.travel = { from: { ...this.pose }, to, elapsed: 0 }
+    this.travel = { from: { ...this.pose }, to: { ...to }, elapsed: 0 }
     this.emit()
   }
 

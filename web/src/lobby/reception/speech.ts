@@ -352,3 +352,32 @@ export function createVoiceOutput(lang = 'en-GB'): VoiceOutput | null {
 function now(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now()
 }
+
+// ---------------------------------------------------------------------------
+// Remembering the visitor's choice
+// ---------------------------------------------------------------------------
+
+const VOICE_OUTPUT_KEY = 'aicountly-lobby-voice-output'
+
+/**
+ * Whether replies were read aloud last time.
+ *
+ * Off on a first visit, always — nothing may speak at a visitor who has not
+ * asked for it. But having asked once, being asked again on every reload is a
+ * setting that behaves like a bug.
+ */
+export function recallVoiceOutput(): boolean {
+  try {
+    return window.localStorage?.getItem(VOICE_OUTPUT_KEY) === 'on'
+  } catch {
+    return false
+  }
+}
+
+export function rememberVoiceOutput(enabled: boolean): void {
+  try {
+    window.localStorage?.setItem(VOICE_OUTPUT_KEY, enabled ? 'on' : 'off')
+  } catch {
+    // Private mode or blocked storage. Not remembering is not worth failing over.
+  }
+}

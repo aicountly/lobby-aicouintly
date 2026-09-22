@@ -6,7 +6,7 @@
  * Sharing it is what guarantees the requirement that both routes offer exactly
  * the same choices — they cannot drift apart, because there is only one of them.
  */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { CharacterCapability } from '../reception/capability'
 import type { ConversationSnapshot, ReceptionConversation } from '../reception/conversation'
@@ -58,9 +58,25 @@ interface Props {
 export function ServiceCentre({ adapter, heading = 'How can we help?', reception }: Props) {
   const [active, setActive] = useState<ServiceKey | null>(null)
   const current = SERVICES.find((service) => service.key === active)
+  const root = useRef<HTMLDivElement>(null)
+
+  // Changing journey swaps the whole body but not the scroll position, so the
+  // panel can open part-way down its own opening paragraph. Whatever moved it —
+  // focus, a restored position — the first thing a new journey should show is
+  // its top.
+  useEffect(() => {
+    let node = root.current?.parentElement
+    while (node) {
+      if (node.scrollHeight > node.clientHeight) {
+        node.scrollTop = 0
+        return
+      }
+      node = node.parentElement
+    }
+  }, [active])
 
   return (
-    <div className="lobby-service-centre">
+    <div className="lobby-service-centre" ref={root}>
       <DemoBanner mode={adapter.mode} />
 
       {current ? (
