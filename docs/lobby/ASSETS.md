@@ -80,58 +80,115 @@ A visitor is a cylinder of radius **0.38 m** with eyes at **1.65 m**.
 
 ## The receptionist character
 
-### What is shipped, and what it is not
+### What is shipped
 
-The character in the room is **generated in code**: an articulated figure with a
-procedural face whose head shell carries seventeen ARKit-named morph targets,
-built as vertex deltas over a parametric skull. Eyelids, brows, gaze and the
-mouth aperture are small meshes moved by transform. It is driven by the same
-viseme schedule a supplied glTF would be driven by, so lip-sync is exercised
-rather than declared.
+**A real human character.** `web/public/lobby-assets/receptionist.glb` — 5.7 MB,
+83,686 triangles, a 67-bone Mixamo-named humanoid skeleton, and the **full ARKit
+52 blendshape set** with 11 of the 15 OVR visemes native. The remaining four
+come from `VISEME_TO_ARKIT` at runtime.
 
-It is **stylised, not photoreal**. It is not scanned, sculpted or bought; it is
-a few hundred lines of geometry. It is labelled as a demonstration character on
-its badge and on a board above its head, and the reception panel states what it
-can do. Nobody should describe it as finished art, and the requirements below
-still stand in full for a character that would replace it.
+It is **not photoreal**, and nobody should say it is. It is a parametric human
+from the MakeHuman ecosystem: realistic proportions, real skin, eye and hair
+textures, and a face that holds an expression — but not a scan and not a sculpt.
+It also arrives in a casual top rather than business dress, which is a wardrobe
+limitation of the source asset, not a choice.
 
-### Character capability assessment
+It replaced the generated stylised figure described in RELEASE-2A-2B.md. That
+figure is still in the repository and still mounts whenever no model is
+supplied, so a fresh clone with no `.glb` renders a complete room exactly as
+before.
 
-A bounded discovery pass was made for a licensed rigged human character. What it
-found, on the date below:
+#### Where it came from, and the licence that decided it
 
-| Source | Result |
+| | |
 | --- | --- |
-| Poly Haven (`api.polyhaven.com`) | **Unreachable.** The build environment's egress policy refuses the CONNECT |
-| Ready Player Me (`models.readyplayer.me`) | **Unreachable**, same reason |
-| Mixamo (`mixamo.com`) | **Unreachable**, same reason |
-| Meshy (`api.meshy.ai`) | **Unreachable**, and no generation credential is configured or authorised for this repository |
-| `raw.githubusercontent.com` | **Reachable.** The only route to any asset from this build |
+| Source | `mpfb.glb` from [met4citizen/TalkingHead](https://github.com/met4citizen/TalkingHead) |
+| Built with | Blender + [MPFB](https://static.makehumancommunity.org/mpfb.html), from MakeHuman assets |
+| Licence | **CC0** — public domain |
+| Why it matters | Lobby is served as static files, so the `.glb` is downloadable by anyone who visits. CC0 permits that, commercially. |
 
-Two licensed rigged characters were therefore obtainable, and both were
-inspected with `npm run inspect:character` rather than taken on description:
+The same repository's better-known `brunette.glb` is a Ready Player Me avatar
+and is **CC BY-NC 4.0**. It is the more polished character, and it was rejected
+without further consideration: Aicountly Lobby is a commercial product's front
+door, and non-commercial is not a licence it can use. `avatar.glb`,
+`avatarsdk.glb` and `vroid.glb` in that repository are non-commercial too.
 
-| | RobotExpressive | CesiumMan |
-| --- | --- | --- |
-| Licence | CC0 1.0 (Tomás Laulhé; modifications by Don McCurdy) | CC BY 4.0 (Cesium) |
-| Size | 453 KB | 428 KB |
-| Geometry | 3,237 triangles, 3 materials | 4,672 triangles, 1 material |
-| Skeleton | 43 bones | 19 bones |
-| Clips | 14, including `Idle` and `Wave` | 1, unnamed (`animation_0`) |
-| Morph targets | 3 — `Angry`, `Surprised`, `Sad` | **none** |
-| ARKit set | 0 / 52 | 0 / 52 |
-| OVR visemes | **0 / 15** | **0 / 15** |
-| Verdict | Body clips and some expression morphs; **lip-sync not possible** | No named idle clip, no face |
+#### What the discovery pass found this time
 
-Neither supplies a viseme set, and neither is a human receptionist. So a
-*downloaded* character could not have delivered lip-sync in this build either —
-which is why the face is generated instead. Neither file is committed; both were
-used only to verify that the capability probe reads real glTF files correctly.
+Egress is unchanged from the earlier pass — Poly Haven, Ready Player Me, Mixamo,
+Meshy and Sketchfab all still refuse the CONNECT, and `raw.githubusercontent.com`
+is still the only route to any asset. The difference is that the earlier pass
+concluded from two files on that host (RobotExpressive, CesiumMan) that no
+usable human was reachable. That conclusion was too quick: a CC0 human with the
+complete ARKit set was one directory away.
 
-**The gap is stated plainly: no licensed, rigged, photoreal human character was
-obtainable here, and the shipped figure is an interim stylised one.** When such
-a character is available, everything above it already works against
-`CharacterCapability` and the swap is a file copy plus a manifest entry.
+#### Budgets, and where this file breaks them
+
+Stated rather than quietly waived:
+
+| | Asked for | Shipped | |
+| --- | --- | --- | --- |
+| Triangles | ≤ 60k | **83,686** | **Over.** 43k of it is eyelashes and eyebrows, which are alpha-mapped hair cards a quadric simplifier tears apart at the silhouette. |
+| Materials | ≤ 4 | **7** | **Over.** Body, clothing, eyes, brows/lashes, teeth, tongue, hair. |
+| Textures | ≤ 2048² | 2048² face, 1024² rest | Within. |
+| Format | single `.glb` | single `.glb` | Within. |
+| Height | 1.6–1.9 m | 1.783 m | Within. |
+| Bones | ≤ 80 | 67 | Within. |
+| `idle` clip | **required** | **none** | **Missing.** See below. |
+
+#### No clips, so the body is posed in code
+
+The file has zero animation clips, and `idle` is the one clip the requirements
+below call mandatory. Authoring clips would have meant Blender or Mixamo,
+neither available here.
+
+What it does have is a standard humanoid skeleton with Mixamo naming, which is
+enough to pose in code — which is what the lobby already does for its own
+generated figure. `src/lobby/reception/skeletonPoser.ts` settles the arms
+against the body, breathes, sways, glances and waves, driven by the same
+controller and the same state machine an authored character would use. The
+capability panel says `body posed in code` rather than letting `0/8 animation
+roles` read as a character standing frozen.
+
+A replacement that ships real clips is still better, and the requirements below
+still ask for them. `rolesProvided` being non-empty switches the poser off.
+
+#### How the file was reduced, and what that cost
+
+`scripts/build-character.mjs` takes the 35.1 MB source to 5.7 MB and is the
+recipe for the committed binary — run it against the source and you get the
+shipped file back. Three cuts, in order of saving:
+
+1. **Textures resized and re-encoded to WebP.** 18.5 MB → 0.8 MB.
+2. **Morph NORMAL deltas dropped** — exactly half the morph payload. The
+   POSITION deltas carry the shape; the normals only change how light moves
+   across the face as it deforms. **This is a real loss, not a free one.** Under
+   the lobby's soft even lighting at counter distance it is not one anybody
+   sees, but it is written down here rather than called free.
+3. **Morphs removed from meshes they cannot move.** MakeHuman writes all 52
+   shapes onto every mesh, so the eyelashes carried `jawOpen` and the eyebrows
+   carried `mouthSmile`. Lashes and brows keep the eye, brow, nose and cheek
+   shapes — a lash must still follow a blink — and lose the rest.
+
+Two things were measured and rejected. **Draco** gives 6.21 MB against 7.94 MB
+raw, but the server gzips: 3.72 MB against 4.56 MB on the wire, and a ~200 KB
+decoder fetch that blocks the character appearing eats most of that.
+**KHR_mesh_quantization** is worse than useless here at 13.6 MB — it
+de-sparsifies the morph accessors, and sparse is already the efficient shape for
+mostly-zero deltas.
+
+#### Load cost
+
+Measured in this build environment, which is **software-rendered on shared
+infrastructure and is not a hardware benchmark**: importing the code-split
+GLTFLoader chunk 4.2 s, fetching 5.7 MB over localhost 1.5 s, parsing 2.2 s. The
+import figure in particular is an artefact of a busy single main thread and
+should be far smaller on a real device; none of these numbers should be quoted
+as what a visitor experiences.
+
+What matters structurally is that the generated character mounts immediately and
+the supplied one replaces it when ready, so the room is never empty and never
+blocks on the download.
 
 ### Requirements for a replacement
 

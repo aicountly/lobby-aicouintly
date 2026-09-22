@@ -63,6 +63,40 @@ export function createMorphFaceRig(meshes: readonly MorphTargetMesh[]): FaceRig 
   }
 }
 
+/**
+ * Build one frame's complete face pose into a reused object.
+ *
+ * Extracted and given a test because the obvious inline version had a bug that
+ * survived until a character with native `viseme_*` shapes arrived. Reusing the
+ * object across frames avoids an allocation per frame, but it means **every**
+ * key from the previous frame must be cleared, not just the ones about to be
+ * written. The expression pass only writes FACE_CONTROLS; viseme keys are not
+ * in that list, so they persisted — and since the viseme pass ADDS, each one
+ * that ever fired climbed to 1 and stayed. Six pinned at once hold a mouth
+ * permanently open.
+ *
+ * @param out reused between frames; cleared here, never by the caller
+ * @param expression ARKit controls for the current state
+ * @param mouth this frame's lip-sync, which may use names outside FACE_CONTROLS
+ */
+export function composeFacePose(
+  out: Record<string, number>,
+  expression: Readonly<Record<string, number | undefined>>,
+  mouth: Readonly<Record<string, number | undefined>> | null,
+): Record<string, number> {
+  for (const key of Object.keys(out)) out[key] = 0
+  for (const control of FACE_CONTROLS) out[control] = expression[control] ?? 0
+
+  if (mouth) {
+    for (const [key, value] of Object.entries(mouth)) {
+      const total = (out[key] ?? 0) + (value ?? 0)
+      out[key] = total > 1 ? 1 : total
+    }
+  }
+
+  return out
+}
+
 /** A rig that can move nothing. Used when no character is mounted. */
 export const NULL_FACE_RIG: FaceRig = {
   controls: [],

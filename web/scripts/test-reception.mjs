@@ -1504,6 +1504,55 @@ await asyncTest('speech never starts itself', async () => {
 })
 
 // ---------------------------------------------------------------------------
+// The face pose, composed once per frame into a reused object
+// ---------------------------------------------------------------------------
+
+{
+  const { composeFacePose } = await load('/src/lobby/reception/faceRig.ts')
+
+  test('a viseme does not survive into the next frame', () => {
+    const scratch = {}
+
+    // Frame 1: speaking, one viseme at full strength.
+    composeFacePose(scratch, {}, { viseme_aa: 1 })
+    assert.equal(scratch.viseme_aa, 1, 'the viseme applies while it is being spoken')
+
+    // Frame 2: silent. Nothing should be left holding the mouth open.
+    composeFacePose(scratch, {}, null)
+    assert.equal(scratch.viseme_aa, 0, 'and is released the moment it stops')
+  })
+
+  test('visemes do not accumulate frame over frame', () => {
+    const scratch = {}
+    for (let frame = 0; frame < 30; frame += 1) composeFacePose(scratch, {}, { viseme_nn: 0.2 })
+
+    assert.equal(
+      scratch.viseme_nn,
+      0.2,
+      'thirty frames of the same viseme is still that viseme, not a mouth pinned at 1',
+    )
+  })
+
+  test('an expression and a viseme on the same control add, within one frame', () => {
+    const scratch = {}
+    composeFacePose(scratch, { jawOpen: 0.3 }, { jawOpen: 0.5 })
+    assert.equal(Math.round(scratch.jawOpen * 100) / 100, 0.8, 'they combine')
+
+    composeFacePose(scratch, { jawOpen: 0.8 }, { jawOpen: 0.8 })
+    assert.equal(scratch.jawOpen, 1, 'and are clamped rather than driven past full')
+  })
+
+  test('an expression control that stops being posed returns to zero', () => {
+    const scratch = {}
+    composeFacePose(scratch, { mouthSmileLeft: 0.9 }, null)
+    assert.equal(scratch.mouthSmileLeft, 0.9, 'the smile applies')
+
+    composeFacePose(scratch, {}, null)
+    assert.equal(scratch.mouthSmileLeft, 0, 'and clears when the state no longer asks for it')
+  })
+}
+
+// ---------------------------------------------------------------------------
 
 clearTimeout(watchdog)
 await server.close()

@@ -202,7 +202,17 @@ export function describeGltfCharacter(
   const face = faceCapabilityFrom(morphNames)
   const notes: string[] = []
   if (!skinned) notes.push('The character is not skinned, so body clips cannot play.')
-  if (clips.length === 0) notes.push('The file contains no animation clips.')
+  if (clips.length === 0) {
+    // "0/8 animation roles" on its own reads as a frozen character, which is
+    // not what happens: a skinned humanoid with no clips is posed in code
+    // instead. Say which, so an operator is not left diagnosing a stall that
+    // is not there.
+    notes.push(
+      skinned
+        ? 'The file contains no animation clips, so the body is posed in code — it stands, breathes and waves, but plays nothing authored.'
+        : 'The file contains no animation clips.',
+    )
+  }
   if (unnamedMorphs > 0) {
     notes.push(
       `${unnamedMorphs} morph target(s) have no names (extras.targetNames is missing), so they cannot be addressed and are left at zero.`,
@@ -284,5 +294,11 @@ export function summariseCapability(capability: CharacterCapability, mode: LipSy
       : capability.face.controls.length > 0
         ? `${capability.face.controls.length} facial controls`
         : 'no facial controls'
-  return `${capability.source === 'gltf' ? 'Supplied model' : 'Procedural character'}: ${roles}/${RECEPTIONIST_CLIPS.length} animation roles, ${face}, lip-sync ${mode}.`
+  // "0/8 animation roles" alone reads as a character standing frozen. When it
+  // is skinned, that is not what happens — it is posed in code — and the one
+  // line a visitor or operator actually reads should say so.
+  const body =
+    roles === 0 && capability.skinned ? ', body posed in code' : ''
+
+  return `${capability.source === 'gltf' ? 'Supplied model' : 'Procedural character'}: ${roles}/${RECEPTIONIST_CLIPS.length} animation roles${body}, ${face}, lip-sync ${mode}.`
 }

@@ -1,32 +1,80 @@
 {
   "_readme": [
     "Aicountly Lobby asset manifest. Read at runtime, so replacing 3D art is a",
-    "file copy into this folder — no rebuild, no code change.",
+    "file copy into this folder \u2014 no rebuild, no code change.",
     "",
     "Every slot below has url: null, which keeps the procedural placeholder for",
     "that slot. Point one at a .glb in this folder to replace just that piece;",
     "the rest of the room is unaffected. Only same-origin paths are accepted.",
     "",
-    "Requirements for each slot — rig, clips, blendshapes, budgets — are in",
+    "Requirements for each slot \u2014 rig, clips, blendshapes, budgets \u2014 are in",
     "docs/lobby/ASSETS.md."
   ],
   "version": 1,
   "slots": {
     "room": {
       "url": null,
-      "transform": { "position": [0, 0, 0], "rotationDegrees": [0, 0, 0], "scale": 1 }
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotationDegrees": [
+          0,
+          0,
+          0
+        ],
+        "scale": 1
+      }
     },
     "receptionDesk": {
       "url": null,
-      "transform": { "position": [0, 0, 0], "rotationDegrees": [0, 0, 0], "scale": 1 }
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotationDegrees": [
+          0,
+          0,
+          0
+        ],
+        "scale": 1
+      }
     },
     "loungeSeating": {
       "url": null,
-      "transform": { "position": [0, 0, 0], "rotationDegrees": [0, 0, 0], "scale": 1 }
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotationDegrees": [
+          0,
+          0,
+          0
+        ],
+        "scale": 1
+      }
     },
     "receptionist": {
-      "url": null,
-      "transform": { "position": [1.3, 0, -6.1], "rotationDegrees": [0, 0, 0], "scale": 1 },
+      "url": "/lobby-assets/receptionist.glb",
+      "transform": {
+        "position": [
+          1.3,
+          0,
+          -6.1
+        ],
+        "rotationDegrees": [
+          0,
+          0,
+          0
+        ],
+        "scale": 1
+      },
       "animations": {
         "idle": "Idle",
         "greet": "Greet",

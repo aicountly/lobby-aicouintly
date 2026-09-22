@@ -22,10 +22,10 @@ import { createReceptionAnimationController } from '../reception/animationContro
 import { NO_CHARACTER, describeGltfCharacter } from '../reception/capability'
 import type { CharacterCapability } from '../reception/capability'
 import { EXPRESSION_RATE, STATE_EXPRESSIONS, approachPose, emptyPose } from '../reception/expressions'
-import { createMorphFaceRig } from '../reception/faceRig'
+import { composeFacePose, createMorphFaceRig } from '../reception/faceRig'
 import { sampleLipSync, sampleNativeVisemes } from '../reception/lipSync'
+import { createSkeletonPoser } from '../reception/skeletonPoser'
 import type { ReceptionSignal } from '../reception/signal'
-import { FACE_CONTROLS } from '../reception/visemes'
 import { ProceduralReceptionist } from './Receptionist'
 
 interface Props {
@@ -70,10 +70,18 @@ export function ReceptionistSlot({ slot, signal, reducedMotion, onCapability }: 
           }
         })
         setLoaded({ scene: model, clips: gltf.animations ?? [] })
-      } catch {
+      } catch (error) {
         // A character that cannot load leaves the generated one standing. An
         // empty space behind the counter would be a worse failure.
-        if (!cancelled) setLoaded(null)
+        //
+        // But it says so. Failing silently here means a manifest pointing at a
+        // real file that the loader cannot read is indistinguishable from a
+        // manifest pointing at nothing, and the room looks identical either
+        // way — which cost real time to diagnose once already.
+        if (!cancelled) {
+          console.warn(`[lobby] character ${url} could not be loaded; keeping the generated one.`, error)
+          setLoaded(null)
+        }
       }
     })()
 
@@ -137,6 +145,19 @@ function SuppliedCharacter({
 
   const useNative = capability.face.nativeVisemes.length >= 8
 
+  /**
+   * A character that supplied no clips is posed in code instead.
+   *
+   * Without this it stands in its bind pose — arms straight out — for the whole
+   * visit, which reads as a scarecrow rather than a receptionist. The poser is
+   * built only when there is nothing to play, so a properly authored character
+   * is never second-guessed by it.
+   */
+  const poser = useMemo(
+    () => (capability.rolesProvided.length === 0 ? createSkeletonPoser(loaded.scene) : null),
+    [capability.rolesProvided.length, loaded.scene],
+  )
+
   useEffect(() => {
     controller.setReducedMotion(reducedMotion)
   }, [controller, reducedMotion])
@@ -162,20 +183,27 @@ function SuppliedCharacter({
     }
     controller.update(dt)
 
+    if (poser?.usable) {
+      poser.apply({
+        role: controller.role,
+        roleElapsed: controller.roleElapsed,
+        time: (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000,
+        reducedMotion,
+      })
+    }
+
     if (faceRig.controls.length === 0) return
 
     approachPose(scratch.expression, STATE_EXPRESSIONS[signal.state], EXPRESSION_RATE, dt)
-    const applied = scratch.applied as Record<string, number>
-    for (const control of FACE_CONTROLS) applied[control] = scratch.expression[control]
 
-    if (!reducedMotion) {
-      const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
-      const mouth = useNative ? sampleNativeVisemes(signal, now) : sampleLipSync(signal, now)
-      for (const [key, value] of Object.entries(mouth)) {
-        const total = (applied[key] ?? 0) + (value ?? 0)
-        applied[key] = total > 1 ? 1 : total
-      }
-    }
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    const mouth = reducedMotion
+      ? null
+      : useNative
+        ? sampleNativeVisemes(signal, now)
+        : sampleLipSync(signal, now)
+
+    const applied = composeFacePose(scratch.applied as Record<string, number>, scratch.expression, mouth)
 
     faceRig.apply(applied)
   })
