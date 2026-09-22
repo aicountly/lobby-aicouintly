@@ -17,8 +17,25 @@ import type { AnimationMapping, ReceptionistClip, ReceptionistState } from '../a
 import { FACE_CONTROLS, OVR_VISEMES } from './visemes'
 import type { FaceControl, OvrViseme } from './visemes'
 
-/** How the mouth is driven. Mode A, Mode B, Mode C. */
-export type LipSyncMode = 'timed' | 'audio' | 'none'
+/**
+ * How the mouth is driven, named for what it actually is.
+ *
+ * The previous name for `text-estimated` was `timed`, which read as though the
+ * speech provider were supplying timings. It is not: the schedule is guessed
+ * from the spelling of the reply and nudged by whatever word-boundary events
+ * the browser's own speech engine happens to emit. Calling that
+ * "provider-timed viseme synchronisation" would be a claim this code cannot
+ * support, so it is not called that.
+ */
+export type LipSyncMode =
+  /** Timed viseme events supplied by the speech provider, mapped to real controls. */
+  | 'provider-viseme'
+  /** The envelope of the audio actually playing drives the jaw. Approximate. */
+  | 'audio-reactive'
+  /** A schedule estimated from the reply text. Approximate, and no audio is consulted. */
+  | 'text-estimated'
+  /** No drivable mouth. Body animation and captions. */
+  | 'none'
 
 export interface FaceCapability {
   /** ARKit-named controls the character can actually move. */
@@ -87,29 +104,31 @@ export function faceCapabilityFrom(names: Iterable<string>): FaceCapability {
 /**
  * Which lip-sync mode to run.
  *
- * Preference order is a statement about quality: a schedule built from the text
- * knows what sound is coming and can shape the mouth for it, while an envelope
- * only knows how loud the last frame was and can do nothing but open and close.
- * Envelope-driving is the better answer only when there is audio and no text —
- * a voice the lobby did not author — and captions are the honest answer when
- * the character has no mouth to drive.
+ * Ordered by how much each one actually knows about the sound being made.
+ * Provider visemes are measured from the audio that will play. An envelope is
+ * measured from the audio that *is* playing, but only its loudness. A text
+ * schedule is measured from nothing at all — it knows the spelling and guesses
+ * the rest — so it ranks last among the modes that move a mouth, and captions
+ * are the honest answer when there is no mouth to move.
  */
 export function chooseLipSyncMode(
   face: FaceCapability,
-  sources: { analyser: boolean; text: boolean },
+  sources: { visemeEvents: boolean; analyser: boolean; text: boolean },
 ): LipSyncMode {
-  if (face.canShapeMouth && sources.text) return 'timed'
-  if (face.canOpenJaw && sources.analyser) return 'audio'
-  if (face.canShapeMouth) return 'timed'
+  if (face.canShapeMouth && sources.visemeEvents) return 'provider-viseme'
+  if (face.canOpenJaw && sources.analyser) return 'audio-reactive'
+  if (face.canShapeMouth && sources.text) return 'text-estimated'
   return 'none'
 }
 
 export function describeLipSyncMode(mode: LipSyncMode): string {
   switch (mode) {
-    case 'timed':
-      return 'Mouth shapes scheduled from the reply text and corrected against the speaker’s word boundaries.'
-    case 'audio':
-      return 'Jaw driven by the loudness of the audio being played. No mouth shapes.'
+    case 'provider-viseme':
+      return 'Mouth shapes from timed viseme events supplied with the audio, played on the audio clock.'
+    case 'audio-reactive':
+      return 'Jaw driven by the loudness of the audio as it plays. Approximate mouth movement, not phoneme-accurate.'
+    case 'text-estimated':
+      return 'Mouth shapes estimated from the spelling of the reply, nudged by the browser’s word-boundary events. Approximate; nothing measures the audio.'
     case 'none':
       return 'No facial animation. Body animation and on-screen captions only.'
   }

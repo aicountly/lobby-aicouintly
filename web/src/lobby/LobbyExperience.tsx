@@ -169,6 +169,8 @@ export function LobbyExperience({ children, actions }: Props) {
     conversation: reception.conversation,
     snapshot: reception.snapshot,
     capability: reception.capability,
+    mode: reception.mode,
+    capabilities: reception.capabilities,
   }
 
   const standard = (
@@ -227,6 +229,7 @@ export function LobbyExperience({ children, actions }: Props) {
             receptionState={reception.snapshot.state}
             reception={reception.snapshot}
             onTalk={talk}
+            onPlayBlocked={() => void reception.conversation.playBlockedAudio()}
             onToggleSpeech={toggleSpeech}
             actions={actions}
             onOpenServices={openServices}

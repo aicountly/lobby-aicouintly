@@ -19,16 +19,27 @@ import type { CharacterCapability } from '../reception/capability'
 import type { ConversationSnapshot, ReceptionConversation, ServiceShortcutKey } from '../reception/conversation'
 import { rememberVoiceOutput } from '../reception/speech'
 import { RECEPTION_STATE_ANNOUNCEMENTS, RECEPTION_STATE_LABELS } from '../reception/states'
+import type { ReceptionMode } from '../reception/useReception'
+import type { LobbyCapabilities } from '../services/receptionApi'
 import { UnavailableNotice } from './Notices'
 
 interface Props {
   conversation: ReceptionConversation
   snapshot: ConversationSnapshot
   capability: CharacterCapability
+  mode: ReceptionMode
+  capabilities: LobbyCapabilities | null
   onOpenService?: (key: ServiceShortcutKey) => void
 }
 
-export function ReceptionChat({ conversation, snapshot, capability, onOpenService }: Props) {
+export function ReceptionChat({
+  conversation,
+  snapshot,
+  capability,
+  mode,
+  capabilities,
+  onOpenService,
+}: Props) {
   const [draft, setDraft] = useState('')
   const transcript = useRef<HTMLDivElement>(null)
 
@@ -60,11 +71,31 @@ export function ReceptionChat({ conversation, snapshot, capability, onOpenServic
       {/* Short at the top, in full at the bottom. The controls have to be the
           first thing in the panel: when the long version led, Talk was 285 px
           below the fold on a phone and the feature may as well not have
-          existed. */}
-      <p className="lobby-field-help lobby-disclosure-short">
-        Scripted replies, matched by keyword — no AI model is connected. Nothing is booked, sent or
-        stored.
-      </p>
+          existed.
+
+          Three modes, never two. A live deployment whose model is not
+          configured says so here rather than answering from the demonstration
+          script and letting a visitor believe it is talking to an AI. */}
+      {mode === 'demo' ? (
+        <p className="lobby-field-help lobby-disclosure-short">
+          Scripted replies, matched by keyword — no AI model is connected. Nothing is booked, sent
+          or stored.
+        </p>
+      ) : mode === 'live' ? (
+        <p className="lobby-field-help lobby-disclosure-short">
+          Answers come from a live AI receptionist using{' '}
+          {capabilities?.knowledge.configured
+            ? 'this business’s approved information'
+            : 'no approved business information yet, so it will say what it does not know'}
+          . It cannot book, send or contact anyone.
+        </p>
+      ) : (
+        <p className="lobby-standard-reason" role="status">
+          {capabilities?.conversation.reason ??
+            'The reception AI is not connected on this deployment.'}{' '}
+          The service options below still work.
+        </p>
+      )}
 
       <div className="lobby-reception-status">
         <span className={`lobby-state-chip is-${snapshot.state}`}>{RECEPTION_STATE_LABELS[snapshot.state]}</span>
@@ -135,6 +166,18 @@ export function ReceptionChat({ conversation, snapshot, capability, onOpenServic
         </p>
       ) : null}
 
+      {snapshot.playbackBlocked ? (
+        <div className="lobby-suggestions">
+          <button
+            type="button"
+            className="lobby-chip lobby-chip-primary"
+            onClick={() => void conversation.playBlockedAudio()}
+          >
+            Tap to hear this reply
+          </button>
+        </div>
+      ) : null}
+
       {snapshot.shortcut && onOpenService ? (
         <div className="lobby-suggestions">
           <button
@@ -181,8 +224,15 @@ export function ReceptionChat({ conversation, snapshot, capability, onOpenServic
           where there is room for it, and it is still on the page. */}
       <div className="lobby-disclosure">
         <p className="lobby-field-help">
-          Voice uses your browser’s own speech engine, so no audio leaves this device and no
-          recording is kept. Your microphone is only opened when you press Talk.
+          {capabilities?.speech.configured
+            ? 'Replies are spoken by this business’s speech service: the reply text is sent to it to be read aloud.'
+            : 'Replies are spoken by your browser’s own speech engine, so the text stays on this device.'}{' '}
+          {capabilities?.transcription.configured
+            ? 'When you press Talk, the recording is sent to a transcription service and is not stored.'
+            : 'When you press Talk, your browser’s own recogniser is used. Your microphone is only opened at that moment.'}
+          {snapshot.voice.source !== 'none'
+            ? ` The last reply was read by ${snapshot.voice.source === 'server' ? 'the server voice' : 'your browser’s voice'}.`
+            : ''}
         </p>
         <p className="lobby-field-help lobby-capability">
           {summariseCapability(capability, snapshot.lipSync)}{' '}

@@ -48,7 +48,7 @@ export function driveMeasurement(signal: ReceptionSignal, mode: CharacterMode): 
   const lengthMs = last ? last.startMs + last.durationMs : 3000
 
   setSignalState(signal, 'speaking')
-  signal.lipSync = 'timed'
+  signal.lipSync = 'text-estimated'
   beginSpeaking(signal, timeline, now())
 
   const handle = setInterval(() => {

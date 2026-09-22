@@ -4,16 +4,35 @@ The figure behind the counter and the panel that opens when you select the desk
 are one thing. This is how it is built, what it can and cannot do, and what it
 does with a microphone.
 
+## Three modes, never two
+
+| Mode | When | What answers |
+| --- | --- | --- |
+| **demo** | `VITE_LOBBY_SERVICE_MODE` unset or `demo` — the default | A keyword-matched script in `demoAdapter.ts`. Labelled as a demonstration on the panel |
+| **live** | `=live` **and** the server reports a configured model | The Anthropic Messages API, through this product's own PHP API, using tenant-approved knowledge |
+| **unavailable** | `=live` and the server reports no model | Nothing. The panel says so and the booking and enquiry journeys stay usable |
+
+The third mode is the point. A live deployment whose model is not configured
+**must not** fall back to keyword matching: that would present a demonstration
+to a visitor as a real AI. There is no code path from a failed live request to
+a scripted answer — `liveAdapter.askReception` returns `unavailable` on every
+failure, and it does not import `demoAdapter`.
+
+`GET /api/lobby/capabilities` is what the browser asks. It reports each
+capability separately, so a deployment with a model but no voice is a
+receptionist that types rather than one that is down.
+
 ## What it is not
 
 Before anything else, because these are the claims that would be easiest to
 make and are not true:
 
-- **There is no language model connected.** Replies are matched from the
+- **In demo mode there is no language model.** Replies are matched from the
   question by keyword, and every one of them is written out in full in
-  `web/src/lobby/services/demoAdapter.ts`. The relay that would front a real
-  model (`VITE_LOBBY_RECEPTION_AI_PATH`) is unset, and while it is unset the
-  live adapter reports the capability unavailable rather than answering.
+  `web/src/lobby/services/demoAdapter.ts`.
+- **No model credential is configured in this repository.** The live path is
+  implemented and tested against fixtures; whether it answers depends on
+  `LOBBY_AI_API_KEY` in the API's own `.env` on the server.
 - **Nothing is booked, sent or stored.** Every receipt carries `demo: true`, and
   the character is structurally unable to describe one as real — see
   [Receipts](#receipts).
@@ -23,8 +42,83 @@ make and are not true:
   figure with a procedural face. It is stylised, it is labelled as a
   demonstration character on its badge and above its head, and it is not a scan
   or a sculpt.
-- **No audio is recorded or uploaded.** Voice uses the browser's own speech
-  engine. Nothing is buffered, stored or sent anywhere.
+- **Where audio goes depends on which engine is configured, and the panel says
+  which.** With the browser engine, the reply text and the recording stay with
+  the browser's own speech implementation — which may process on the device or
+  in the vendor's cloud depending on the browser, so the interface does not
+  claim it is local. With a configured server engine, the reply text is sent to
+  the speech service and the recording is sent to the transcription service.
+  Neither is stored by this product, and audio is never written to disk or
+  logged by the API.
+
+## The backend
+
+`server-php` is a hand-rolled front controller — no framework, no database, no
+composer — and Phase 2C keeps it that way. Five routes were added:
+
+| Route | Does |
+| --- | --- |
+| `GET /api/lobby/capabilities` | What this deployment can actually do |
+| `POST /api/lobby/session` | Issues a scoped session to a public visitor |
+| `POST /api/lobby/reception` | One turn of the conversation |
+| `POST /api/lobby/speech` | Synthesises a validated reply |
+| `POST /api/lobby/transcribe` | Transcribes one recording |
+
+### The visitor session
+
+`/lobby` is public, so reception cannot sit behind the portal login — and it
+must not become an open proxy to a metered model. A visitor is issued a
+short-lived HMAC-signed token before they can talk. The token carries the
+conversation id and the tenant, **both put there by the server**, so no route
+ever reads a tenant from a request body. A browser can present a token; it
+cannot mint one, edit the tenant in one, or extend one. A token signed for
+another tenant does not verify, because the tenant is re-derived from the host
+and compared rather than read out and believed.
+
+It is not an identity. It says "this browser was issued a reception session",
+and nothing else. The portal session for signed-in users is separate and
+unchanged.
+
+The token travels in `X-Lobby-Session`, a header rather than a cookie, so a
+cross-site form post cannot carry it and classic CSRF does not apply. An Origin
+check is the second lock.
+
+### Limits, and what they are for
+
+Sized to stop runaway cost and abuse on a public page, not to meter billing:
+per-session per-minute, per-address per-hour, per-tenant per-day, plus a
+request-size ceiling, a message-length ceiling and a bounded history. The
+limiter is files under `LOBBY_STATE_DIR`; there is no database, and adding one
+to count requests would be a worse trade than the imprecision this accepts.
+
+### Approved knowledge
+
+Lobby owns reception knowledge — hours as reception should say them, how to
+route a caller, the answers a front desk is actually asked. It lives in
+`knowledge.json` beside `.env` on the server, for the same reasons: it is
+tenant data, it is not this repository's to hold, and a deploy must not be able
+to overwrite it. `knowledge.example.json` ships with placeholders and no
+invented business details.
+
+**Knowledge is data, not instruction.** It is rendered into the prompt inside a
+delimited block, and the rule that says so comes *before* the block — a tenant
+who writes "ignore your instructions" into an FAQ gets a receptionist that has
+read a strange FAQ, not a new set of rules. There is a test that asserts the
+ordering.
+
+### Actions: the model proposes, the backend disposes
+
+The model may propose `offer_booking`, `offer_enquiry` or `request_handover`.
+That list is the entire permission surface. Each is an *offer* put in front of
+the visitor; none writes anything. Proposals are matched against the allowlist
+and a strict schema, undeclared fields are dropped, duplicates collapse, and
+anything unrecognised disappears. **There is no path from model output to a
+URL, a query, or a command.**
+
+Booking still happens in the booking journey, through the application that owns
+appointments, which confirms separately. The system prompt tells the model it
+cannot perform actions and must never say it has — and the interface only
+reports success when the owning service says so.
 
 ## Talking to it
 
@@ -109,15 +203,46 @@ Chosen from what the character can do and what the browser gives us.
 
 | Mode | When | What drives the mouth |
 | --- | --- | --- |
-| **A — `timed`** | The character can shape a mouth, and we have the text | A schedule of visemes built from the reply and corrected against the speaker's word boundaries |
-| **B — `audio`** | Only a jaw, and there is a real audio stream | An RMS envelope of that stream |
-| **C — `none`** | No drivable mouth, or reduced motion | Body animation and the transcript |
+| **`provider-viseme`** | The speech service supplies timed viseme events | Those events, replayed on the audio's own clock |
+| **`audio-reactive`** | Real audio is playing and the character has a jaw | An RMS envelope of the audio that is actually playing |
+| **`text-estimated`** | No audio to measure, but the character can shape a mouth | A schedule guessed from the spelling of the reply |
+| **`none`** | No drivable mouth, or reduced motion | Body animation and the captions |
 
-**Mode A is what runs in this build.** `SpeechSynthesisUtterance` exposes no
-audio buffer — only events — so there is nothing to analyse, and the schedule
-has to be estimated from the text up front and re-anchored as
-`onboundary` arrives. Re-anchoring never moves the mouth backwards: a correction
+**The previous name for `text-estimated` was `timed`, which was wrong.** It read
+as though the speech provider supplied the timings. It does not: the schedule is
+estimated from spelling and nudged by whatever word-boundary events the
+browser's own speech engine emits. Nothing measures the audio. Calling that
+"provider-timed viseme synchronisation" would be a claim this code cannot
+support, so nothing calls it that — and there is a test asserting the
+description says "nothing measures the audio" and never says "provider".
+
+**Which mode runs depends on the deployment.** With a configured server voice,
+real audio plays and `audio-reactive` runs — approximate mouth movement, not
+phoneme-accurate lip-sync, and reported that way. With the browser voice,
+`text-estimated` runs. `provider-viseme` is implemented and unreachable until a
+speech service supplies viseme events.
+
+**The clock matters.** Where audio exists, the schedule runs on the audio
+element's `currentTime`, not on the wall clock. A network round trip and a
+decode sit between "the request was made" and "the sound started"; drive a mouth
+from the first and it finishes talking before the sound does. `scheduleTimeMs`
+prefers the audio clock whenever one is attached, and `endSpeaking` clears it so
+a stopped reply cannot leave the mouth driven by a detached element.
+
+Re-anchoring on word boundaries never moves the mouth backwards: a correction
 that rewinds is more visible than the drift it fixes.
+
+### Playback is a permission, not a setting
+
+A remembered "read replies aloud" preference does not mean the tab may make
+noise. A refused `play()` is reported as `blocked`, not as a failure: the audio
+is **held**, the mouth stays still, the caption stands, and the interface offers
+"Tap to hear this reply" both in the panel and over the room. Mouthing the line
+silently and then again on the tap would deliver the same sentence twice.
+
+If synthesis fails outright, the text stays, a notice says what happened, and
+the browser voice is used as an **explicitly labelled** fallback — the panel
+reports which voice the visitor actually heard.
 
 The schedule is grapheme-level, not phoneme-level. There is no pronunciation
 dictionary in the bundle and shipping one for lip-sync would cost more than the
@@ -125,9 +250,11 @@ entire texture set. At conversational speed and across a reception counter, what
 is visible is a mouth that opens on vowels, closes on P and B and rounds on O,
 and that much is reliable from spelling.
 
-**Mode B is implemented and exercised by tests with a synthetic envelope. It has
-not been exercised against a real text-to-speech stream, because no server-side
-voice is configured in this build.** It is the path a server voice would take.
+**`audio-reactive` is implemented end to end and tested with a fake audio
+element that a test drives by hand — playback, the clock, the envelope, the
+blocked path, cancellation. It has not been exercised against a real
+text-to-speech service, because no speech endpoint is configured and this build
+has no credential for one.**
 
 Visemes are the fifteen Oculus/OVR shapes. Almost no character ships them, so
 each is also written out as a blend of ARKit controls in

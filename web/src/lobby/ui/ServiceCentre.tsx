@@ -10,6 +10,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { CharacterCapability } from '../reception/capability'
 import type { ConversationSnapshot, ReceptionConversation } from '../reception/conversation'
+import type { ReceptionMode } from '../reception/useReception'
+import type { LobbyCapabilities } from '../services/receptionApi'
 import { describeIntegrations } from '../services/registry'
 import type { LobbyServiceAdapter } from '../services/types'
 import { BookingJourney } from './journeys/BookingJourney'
@@ -23,6 +25,8 @@ export interface ReceptionBinding {
   conversation: ReceptionConversation
   snapshot: ConversationSnapshot
   capability: CharacterCapability
+  mode: ReceptionMode
+  capabilities: LobbyCapabilities | null
 }
 
 const SERVICES: { key: ServiceKey; title: string; blurb: string }[] = [
@@ -103,6 +107,8 @@ export function ServiceCentre({
               conversation={reception.conversation}
               snapshot={reception.snapshot}
               capability={reception.capability}
+              mode={reception.mode}
+              capabilities={reception.capabilities}
               onOpenService={setActive}
             />
           ) : null}

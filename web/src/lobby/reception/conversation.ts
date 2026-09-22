@@ -23,6 +23,9 @@ import type {
   ServiceUnavailable,
 } from '../services/types'
 import { isOk } from '../services/types'
+import type { ReceptionApi } from '../services/receptionApi'
+import { createSpokenAudio } from './audioPlayback'
+import type { SpokenAudio } from './audioPlayback'
 import type { CharacterCapability, LipSyncMode } from './capability'
 import { chooseLipSyncMode } from './capability'
 import { beginSpeaking, endSpeaking, setSignalState } from './signal'
@@ -134,6 +137,14 @@ export interface VoiceStatus {
   outputReason: string | null
   listening: boolean
   outputEnabled: boolean
+  /**
+   * Where the voice actually came from for the last reply.
+   *
+   * Reported rather than assumed, because "the server synthesised this" and
+   * "your browser read it out" are different promises about quality and about
+   * where the words went.
+   */
+  source: 'server' | 'browser' | 'none'
 }
 
 export interface ConversationSnapshot {
@@ -151,6 +162,14 @@ export interface ConversationSnapshot {
   voice: VoiceStatus
   lipSync: LipSyncMode
   busy: boolean
+  /**
+   * Audio is ready but the browser refused to start it.
+   *
+   * A remembered sound preference is not a grant of autoplay permission, so
+   * this is an ordinary outcome and the interface offers a tap rather than an
+   * error.
+   */
+  playbackBlocked: boolean
 }
 
 export interface ConversationOptions {
@@ -164,6 +183,12 @@ export interface ConversationOptions {
   capability: CharacterCapability | (() => CharacterCapability)
   voiceInput?: VoiceInput | null
   voiceOutput?: VoiceOutput | null
+  /** The backend client, when this deployment has one. */
+  api?: ReceptionApi | null
+  /** True when the server can synthesise speech for this deployment. */
+  serverSpeech?: () => boolean
+  /** Swapped in tests so playback can be driven without a browser or a sound card. */
+  createAudio?: (blob: Blob) => SpokenAudio
   inputReason?: string | null
   outputReason?: string | null
   reducedMotion?: boolean
@@ -190,6 +215,8 @@ export interface ReceptionConversation {
   stopVoice(): void
   /** Stop everything in flight: speech, microphone, pending reply. */
   interrupt(): void
+  /** Start audio the browser refused to autoplay. Called from a visitor tap. */
+  playBlockedAudio(): Promise<void>
   setVoiceOutput(enabled: boolean): void
   setReducedMotion(reduced: boolean): void
   /** Tell reception a journey produced a receipt, so it can mention it safely. */
@@ -213,6 +240,9 @@ export function createReceptionConversation(options: ConversationOptions): Recep
     signal,
     voiceInput = null,
     voiceOutput = null,
+    api = null,
+    serverSpeech = () => false,
+    createAudio = createSpokenAudio,
     opening = DEFAULT_OPENING,
     starters = DEFAULT_STARTERS,
   } = options
@@ -242,6 +272,10 @@ export function createReceptionConversation(options: ConversationOptions): Recep
   let outputEnabled = false
   let listening = false
   let greeted = false
+  let speechSource: 'server' | 'browser' | 'none' = 'none'
+  let playbackBlocked = false
+  let currentAudio: SpokenAudio | null = null
+  let blockedAudio: SpokenAudio | null = null
   let cached: ConversationSnapshot | null = null
   let disposed = false
 
@@ -276,6 +310,9 @@ export function createReceptionConversation(options: ConversationOptions): Recep
   function modeForReply(): LipSyncMode {
     if (reducedMotion) return 'none'
     return chooseLipSyncMode(capabilityOf().face, {
+      // No speech provider supplies timed viseme events in this build; the
+      // branch exists so a provider that does is a configuration change.
+      visemeEvents: signal.timeline.length > 0 && signal.clock !== null,
       analyser: signal.envelope !== null,
       text: true,
     })
@@ -288,17 +325,28 @@ export function createReceptionConversation(options: ConversationOptions): Recep
    * failure: all three move the mouth, and only one of them is the character
    * standing there helpfully.
    */
+  /** Stop and release whatever is playing. Safe to call repeatedly. */
+  function stopAudio(): void {
+    currentAudio?.stop()
+    currentAudio = null
+    blockedAudio?.stop()
+    blockedAudio = null
+    playbackBlocked = false
+  }
+
+  /**
+   * Put a line in the transcript, animate saying it, and settle the turn.
+   *
+   * `phaseWhileSpeaking` is what separates a greeting from an answer from a
+   * handover from a failure: all four move the mouth, and only two of them are
+   * the character standing there helpfully.
+   */
   function deliver(
     text: string,
     token: TurnToken,
     phaseWhileSpeaking: 'greeting' | 'answering' | 'handover' | 'failed',
   ): void {
     turns = [...turns, { role: 'reception', text }]
-
-    const mode = modeForReply()
-    signal.lipSync = mode
-    const timeline = mode === 'timed' ? visemeTimeline(text) : []
-    beginSpeaking(signal, timeline, now())
     setPhase(phaseWhileSpeaking)
 
     let finished = false
@@ -306,7 +354,8 @@ export function createReceptionConversation(options: ConversationOptions): Recep
       if (finished) return
       finished = true
       endSpeaking(signal)
-      setAudio(voiceOutput ? 'silent' : 'unsupported')
+      currentAudio = null
+      setAudio(voiceOutput || api ? 'silent' : 'unsupported')
       if (token.isCurrent()) {
         setPhase('idle')
         token.settle()
@@ -314,38 +363,143 @@ export function createReceptionConversation(options: ConversationOptions): Recep
       emit()
     }
 
+    // One teardown for every route out of a turn: settled, superseded,
+    // interrupted, disposed. Audio that outlives its turn is the bug this
+    // prevents — a cancelled reply that starts playing a second later.
     token.onRelease(() => {
+      stopAudio()
       voiceOutput?.cancel()
       endSpeaking(signal)
     })
 
-    const spoken =
-      outputEnabled && voiceOutput
-        ? voiceOutput.speak(text, {
-            onStart: () => {
-              if (token.isCurrent()) setAudio('playing')
-              emit()
-            },
-            onBoundary: (charIndex, elapsedMs) => {
-              if (!token.isCurrent()) return
-              signal.offsetMs = retimedOffset(signal.timeline, charIndex, elapsedMs, signal.offsetMs)
-            },
-            onEnd: finish,
-          })
-        : false
-
-    if (spoken) {
-      setAudio('requested')
-    } else {
-      setAudio(voiceOutput ? 'silent' : 'unsupported')
-      // With no voice, the character still animates delivering the line, for as
-      // long as the line would take to read. The visitor reads the transcript;
-      // the figure is not frozen while they do.
+    /** The character delivers the line for as long as reading it would take. */
+    const holdSilently = (timeline: readonly ReturnType<typeof visemeTimeline>[number][]): void => {
       const holdMs = Math.max(timelineDurationMs(timeline), estimateReadMs(text))
       const handle = setTimer(finish, holdMs)
       token.onRelease(() => clearTimer(handle))
     }
 
+    /** The browser's own voice: no audio to analyse, so the schedule is estimated. */
+    const speakInBrowser = (): boolean => {
+      if (!outputEnabled || !voiceOutput) return false
+
+      signal.lipSync = modeForReply()
+      const timeline = signal.lipSync === 'text-estimated' ? visemeTimeline(text) : []
+      beginSpeaking(signal, timeline, now())
+
+      const started = voiceOutput.speak(text, {
+        onStart: () => {
+          if (token.isCurrent()) setAudio('playing')
+          emit()
+        },
+        onBoundary: (charIndex, elapsedMs) => {
+          if (!token.isCurrent()) return
+          signal.offsetMs = retimedOffset(signal.timeline, charIndex, elapsedMs, signal.offsetMs)
+        },
+        onEnd: finish,
+      })
+
+      if (!started) {
+        endSpeaking(signal)
+        return false
+      }
+
+      speechSource = 'browser'
+      setAudio('requested')
+      emit()
+      return true
+    }
+
+    /** Fall back to the silent delivery, with the mouth on an estimated schedule. */
+    const deliverSilently = (): void => {
+      speechSource = 'none'
+      signal.lipSync = modeForReply()
+      const timeline = signal.lipSync === 'text-estimated' ? visemeTimeline(text) : []
+      beginSpeaking(signal, timeline, now())
+      setAudio(voiceOutput || api ? 'silent' : 'unsupported')
+      holdSilently(timeline)
+      emit()
+    }
+
+    /** The server's voice: real audio, so the mouth runs on the audio's clock. */
+    const speakFromServer = async (): Promise<void> => {
+      setAudio('requested')
+      emit()
+
+      const result = await api!.speak(text, { signal: token.signal })
+
+      // The reply may have been superseded while the audio was being made.
+      // Nothing that follows may touch the signal if so.
+      if (!token.isCurrent()) return
+
+      if (!result.ok) {
+        voiceNotice = `${result.reason} The reply is above.`
+        // An explicitly labelled fallback, not a silent substitution: the
+        // interface reports which voice the visitor actually heard.
+        if (!speakInBrowser()) deliverSilently()
+        emit()
+        return
+      }
+
+      const audio = createAudio(result.data)
+      currentAudio = audio
+      token.onRelease(() => audio.stop())
+
+      // Set the clock and the envelope *before* choosing the mode: the mode is
+      // decided by what is actually available to drive the mouth.
+      signal.clock = () => audio.clock()
+      signal.envelope = audio.envelope
+      signal.lipSync = modeForReply()
+      beginSpeaking(signal, [], now())
+      audio.onEnded(finish)
+
+      const outcome = await audio.play()
+      if (!token.isCurrent()) {
+        audio.stop()
+        return
+      }
+
+      if (outcome === 'playing') {
+        speechSource = 'server'
+        setAudio('playing')
+        emit()
+        return
+      }
+
+      // Not playing: the mouth must not move, and the clock must not be left
+      // pointing at an element that is paused at zero.
+      endSpeaking(signal)
+      currentAudio = null
+
+      if (outcome === 'blocked') {
+        // Held, not discarded: the visitor can tap to hear it.
+        //
+        // The mouth stays still while it waits. Mouthing the line silently and
+        // then mouthing it again when the tap lands would deliver the same
+        // sentence twice, and a face moving with no sound is exactly what the
+        // tap is there to fix.
+        blockedAudio = audio
+        playbackBlocked = true
+        speechSource = 'none'
+        setAudio('silent')
+        holdSilently([])
+        emit()
+        return
+      }
+
+      audio.stop()
+      voiceNotice = 'That reply could not be played. The text is above.'
+      if (!speakInBrowser()) deliverSilently()
+      emit()
+    }
+
+    if (outputEnabled && api && serverSpeech()) {
+      void speakFromServer()
+      emit()
+      return
+    }
+
+    if (!speakInBrowser()) deliverSilently()
     emit()
   }
 
@@ -421,9 +575,11 @@ export function createReceptionConversation(options: ConversationOptions): Recep
             outputReason: options.outputReason ?? null,
             listening,
             outputEnabled,
+            source: speechSource,
           },
           lipSync: signal.lipSync,
           busy: phase === 'thinking' || phase === 'capturing',
+          playbackBlocked,
         }
       }
       return cached
@@ -436,8 +592,11 @@ export function createReceptionConversation(options: ConversationOptions): Recep
 
     greet(again = false) {
       if (disposed || (greeted && !again)) return
-      // A repeat greeting while one is already running would cancel itself.
-      if (again && (phase === 'greeting' || signal.speaking)) return
+      // Never over the top of a live exchange. A visitor who steps back and
+      // forward across the threshold mid-question must not have their turn
+      // cancelled by a welcome, and on a metered deployment each cancelled
+      // turn is a request already paid for.
+      if (phase !== 'idle' || signal.speaking || listening) return
       greeted = true
       suggestions = starters
       // Delivered, not posed. Whether it is *heard* is a separate matter: the
@@ -462,8 +621,11 @@ export function createReceptionConversation(options: ConversationOptions): Recep
         outputEnabled = true
         setAudio('silent')
       }
-      // Cancel whatever is being said before opening the microphone, or the
-      // character talks over the visitor and hears itself.
+      // Stop whatever is being said before opening the microphone. Without
+      // this the receptionist is still talking when the recording starts and
+      // transcribes its own voice back as the visitor's question.
+      stopAudio()
+      voiceOutput?.cancel()
       guard.cancel('visitor pressed talk')
       const token = guard.begin()
       voiceNotice = null
@@ -473,7 +635,11 @@ export function createReceptionConversation(options: ConversationOptions): Recep
       emit()
 
       token.onRelease(() => {
-        voiceInput.stop()
+        // Cancel, not stop: a turn that was superseded or interrupted must not
+        // send its recording and produce a transcript for a question nobody is
+        // waiting on any more.
+        if (voiceInput.cancel) voiceInput.cancel()
+        else voiceInput.stop()
         if (listening) {
           listening = false
           signal.inputLevel = 0
@@ -532,8 +698,41 @@ export function createReceptionConversation(options: ConversationOptions): Recep
       emit()
     },
 
+    async playBlockedAudio() {
+      const audio = blockedAudio
+      if (!audio) return
+      blockedAudio = null
+      playbackBlocked = false
+
+      const outcome = await audio.play()
+      if (outcome !== 'playing') {
+        audio.stop()
+        voiceNotice = 'That reply could not be played.'
+        emit()
+        return
+      }
+
+      currentAudio = audio
+      speechSource = 'server'
+      signal.clock = () => audio.clock()
+      signal.envelope = audio.envelope
+      signal.lipSync = modeForReply()
+      beginSpeaking(signal, [], now())
+      setPhase('answering')
+      setAudio('playing')
+      audio.onEnded(() => {
+        endSpeaking(signal)
+        currentAudio = null
+        setAudio('silent')
+        setPhase('idle')
+        emit()
+      })
+      emit()
+    },
+
     interrupt() {
       guard.cancel('visitor interrupted')
+      stopAudio()
       voiceOutput?.cancel()
       voiceInput?.stop()
       listening = false
@@ -579,6 +778,8 @@ export function createReceptionConversation(options: ConversationOptions): Recep
     dispose() {
       disposed = true
       guard.dispose()
+      stopAudio()
+      api?.reset()
       voiceOutput?.cancel()
       voiceInput?.stop()
       listening = false

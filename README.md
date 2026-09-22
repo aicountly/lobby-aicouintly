@@ -41,12 +41,25 @@ message is sent, and no member of staff is contacted.**
 
 The receptionist answers in the third of those, and the figure behind the
 counter is the same conversation: it listens, thinks, answers and hands over,
-with mouth shapes scheduled from the reply text. Replies are matched from the
-question by keyword — **there is no language model connected**. Voice, where the
-browser has one, is the browser's own speech engine, so no audio leaves the
-device and no provider credential exists. The microphone is requested when the
-visitor presses Talk and never on load, and speech is never read aloud until it
-is switched on. See [docs/lobby/RECEPTION.md](docs/lobby/RECEPTION.md).
+with the mouth driven by whichever signal is actually available. The microphone
+is requested when the visitor presses Talk and never on load, and speech is
+never read aloud until it is switched on.
+
+Reception runs in one of **three explicit modes**, and never silently between
+them:
+
+| Mode | Replies come from |
+| --- | --- |
+| `demo` (the default) | A keyword-matched script. No model. Labelled on the panel |
+| `live` | A real model, through this product's own PHP API, using tenant-approved knowledge |
+| `unavailable` | Nothing. The panel says so; the booking and enquiry journeys still work |
+
+A live deployment whose model is not configured **never** falls back to the
+script. Model, speech and transcription credentials are server-side only — every
+`VITE_*` value is inlined into the bundle and is public, so the browser is given
+an API path and never a key. See
+[docs/lobby/RECEPTION.md](docs/lobby/RECEPTION.md) and
+[docs/lobby/RELEASE-2C.md](docs/lobby/RELEASE-2C.md).
 
 **Standard View** offers the same three services as an ordinary page, with no 3D
 at all. It is also where a visitor lands if WebGL is unavailable or the renderer
@@ -133,7 +146,8 @@ guessing high on a weak device costs a bad first impression.
 | `layout.ts` | The floor plan, in metres. **The single source of truth** — the geometry and the collision boxes are both derived from it, so a sofa cannot drift away from the box that stops you walking through it. |
 | `scene/` | The room, built from primitives. PBR materials, generated textures, image-based lighting and the light rig. |
 | `quality.ts` | Low / Balanced / High graphics profiles. |
-| `reception/` | The conversation, the character's seven states, the animation controller, the viseme schedule and the voice wrapper. Framework-free, so it is tested without a browser. |
+| `reception/` | The conversation, the character's seven states, the animation controller, the lip-sync driver, audio playback and the voice wrappers. Framework-free, so it is tested without a browser. |
+| `services/receptionApi.ts` | The browser half of the reception API: visitor session, conversation, speech, transcription. Knows four routes and a token, and nothing about which provider answers. |
 | `scripts/generate-lobby-textures.mjs` | Generates the PBR texture set. Deterministic — same commit, byte-identical PNGs. |
 | `scripts/inspect-character.mjs` | Reports what a `.glb` actually contains — clips, bones, morph-target names — against the contract in `docs/lobby/ASSETS.md`. |
 | `navigation/` | The camera controller and collision. Owns look, walk, travel, and the focus and blur rules. |
@@ -173,6 +187,7 @@ same-origin.
 | `npm run preview` | Serve the production build locally |
 | `npm run textures` | Regenerate the PBR texture set into `public/lobby-assets/textures/` |
 | `npm run test:reception` | Numeric tests for the reception character. No browser, a few seconds |
+| `php server-php/tests/run.php` | Backend tests: sessions, tenant isolation, prompt rules, the action allowlist, limits. No network |
 | `npm run test:ui` | Browser checks for the reception panel. Needs a build first |
 | `npm run measure:avatar` | What the character costs: three configurations, one table. Needs a build first |
 | `npm run inspect:character -- file.glb` | What a supplied character actually provides |

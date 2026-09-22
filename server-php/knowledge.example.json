@@ -1,0 +1,46 @@
+{
+  "_comment": [
+    "Reception knowledge for ONE tenant. Copy to knowledge.json beside .env on the server.",
+    "It is never committed and never uploaded: every rsync step excludes it, exactly like .env.",
+    "Every value here is a PLACEHOLDER. Replace them. Do not deploy invented business details —",
+    "an unconfigured receptionist says it does not know, which is correct; a confidently wrong one is not.",
+    "Lobby owns this file. Appointments, Calendar, Connect and Pay own their own records and are",
+    "asked over their APIs at the moment they are needed. Do not copy their data in here."
+  ],
+  "business": {
+    "name": "REPLACE — the business name reception should use",
+    "description": "REPLACE — one or two sentences a receptionist would say about what this business does"
+  },
+  "hours": [
+    { "days": "REPLACE — e.g. Monday to Friday", "opens": "09:00", "closes": "17:30" },
+    { "days": "REPLACE — e.g. Saturday", "opens": "", "closes": "", "note": "Closed" }
+  ],
+  "locations": [
+    {
+      "label": "REPLACE — e.g. Head office",
+      "address": "REPLACE — full address as reception would read it out",
+      "notes": "REPLACE — parking, entrance, accessibility, or leave empty"
+    }
+  ],
+  "services": [
+    {
+      "name": "REPLACE — service name",
+      "description": "REPLACE — what it is, in a sentence",
+      "fee": "REPLACE ONLY IF APPROVED — leave empty and reception will say it cannot quote a fee"
+    }
+  ],
+  "contact": {
+    "email": "REPLACE — the address reception may give out",
+    "phone": "REPLACE — the number reception may give out",
+    "routing": "REPLACE — who to pass what to, e.g. 'billing questions go to accounts'"
+  },
+  "faqs": [
+    {
+      "question": "REPLACE — a question reception is actually asked",
+      "answer": "REPLACE — the approved answer, in full"
+    }
+  ],
+  "handover": {
+    "instructions": "REPLACE — what reception should say when passing a visitor to a person"
+  }
+}

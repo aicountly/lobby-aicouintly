@@ -73,6 +73,19 @@ export const APPOINTMENTS_API_BASE_URL = (
 export const RECEPTION_AI_PATH = (import.meta.env.VITE_LOBBY_RECEPTION_AI_PATH ?? '').trim()
 
 /**
+ * Where the Phase 2C reception routes live on this product's own PHP API.
+ *
+ * A path, never a credential. Every `VITE_*` value is inlined into the bundle
+ * and is public; the model, speech and transcription keys are read at runtime
+ * from the API's own `.env` on the server and never leave it.
+ */
+export const RECEPTION_API_PREFIX = (
+  import.meta.env.VITE_LOBBY_RECEPTION_API_PREFIX ?? 'lobby'
+)
+  .trim()
+  .replace(/^\/+|\/+$/g, '')
+
+/**
  * Optional runtime asset manifest. When the file is absent the lobby keeps its
  * procedural placeholders, so final art can be dropped in without a rebuild.
  */

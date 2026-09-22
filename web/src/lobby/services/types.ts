@@ -88,6 +88,15 @@ export interface ReceptionReply {
   demo: boolean
   /** Follow-up prompts the visitor can tap. */
   suggestions: string[]
+  /**
+   * Journeys the model proposed putting in front of the visitor.
+   *
+   * Proposals only. The backend has already dropped anything outside its
+   * allowlist, and none of them writes a record: a booking is made in the
+   * booking journey by the application that owns appointments, which confirms
+   * separately. Nothing here may be rendered as a completed action.
+   */
+  actions?: { name: string; input: Record<string, string> }[]
 }
 
 export interface LobbyServiceAdapter {

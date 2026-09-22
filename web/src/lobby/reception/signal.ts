@@ -19,13 +19,22 @@ export interface ReceptionSignal {
   state: ReceptionistState
   /** Bumped on every state change, so the scene can re-trigger a one-shot. */
   stateRevision: number
-  /** Mode A: the schedule being spoken, empty when nothing is. */
+  /** The schedule being spoken, empty when nothing is. */
   timeline: readonly VisemeCue[]
-  /** `performance.now()` when the schedule started. */
+  /** `performance.now()` when the schedule started. Only used with no audio clock. */
   startedAtMs: number
   /** Correction applied by word-boundary events, in milliseconds. */
   offsetMs: number
-  /** Mode B: reads the current 0–1 loudness of the audio being played. */
+  /**
+   * Where the audio has actually reached, in milliseconds.
+   *
+   * Set whenever real audio is playing, and preferred over the wall clock
+   * wherever it exists. The wall clock measures how long ago the request was
+   * made, which includes the network round trip and the decode — drive a mouth
+   * from that and it finishes talking before the sound does.
+   */
+  clock: (() => number) | null
+  /** Audio-reactive: reads the current 0–1 loudness of the audio being played. */
   envelope: (() => number) | null
   lipSync: LipSyncMode
   /** 0–1 microphone level while listening. Drives the listening pose only. */
@@ -41,6 +50,7 @@ export function createReceptionSignal(): ReceptionSignal {
     timeline: [],
     startedAtMs: 0,
     offsetMs: 0,
+    clock: null,
     envelope: null,
     lipSync: 'none',
     inputLevel: 0,
@@ -69,6 +79,15 @@ export function endSpeaking(signal: ReceptionSignal): void {
   signal.timeline = []
   signal.startedAtMs = 0
   signal.offsetMs = 0
+  // Both clocks are cleared, so a stopped reply cannot leave the mouth being
+  // driven by an audio element that is no longer attached to anything.
+  signal.clock = null
   signal.envelope = null
   signal.speaking = false
+}
+
+/** Where the schedule has reached: the audio clock when there is one. */
+export function scheduleTimeMs(signal: ReceptionSignal, nowMs: number): number {
+  if (signal.clock) return signal.clock()
+  return nowMs - signal.startedAtMs + signal.offsetMs
 }

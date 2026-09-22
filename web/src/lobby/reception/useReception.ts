@@ -8,6 +8,9 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 
+import { LOBBY_SERVICE_MODE } from '../lobbyConfig'
+import { liveReceptionApi } from '../services/liveAdapter'
+import type { LobbyCapabilities } from '../services/receptionApi'
 import type { LobbyServiceAdapter } from '../services/types'
 import type { CharacterCapability } from './capability'
 import { NO_CHARACTER } from './capability'
@@ -15,7 +18,14 @@ import { createReceptionConversation } from './conversation'
 import type { ConversationSnapshot, ReceptionConversation } from './conversation'
 import type { ReceptionSignal } from './signal'
 import { createReceptionSignal } from './signal'
-import { createVoiceInput, createVoiceOutput, detectSpeechSupport, recallVoiceOutput } from './speech'
+import {
+  createServerVoiceInput,
+  createVoiceInput,
+  createVoiceOutput,
+  detectSpeechSupport,
+  recallVoiceOutput,
+  serverTranscriptionSupported,
+} from './speech'
 
 export interface UseReceptionOptions {
   adapter: LobbyServiceAdapter
@@ -24,11 +34,24 @@ export interface UseReceptionOptions {
   enabled?: boolean
 }
 
+/**
+ * What the reception desk is running right now.
+ *
+ * Three states, never two. `unavailable` exists so that a live deployment
+ * whose model is not configured says so, instead of quietly answering from the
+ * demonstration script and presenting the result as a real AI.
+ */
+export type ReceptionMode = 'demo' | 'live' | 'unavailable'
+
 export interface Reception {
   signal: ReceptionSignal
   conversation: ReceptionConversation
   snapshot: ConversationSnapshot
   capability: CharacterCapability
+  /** Which of the three modes this deployment is in. */
+  mode: ReceptionMode
+  /** What the server reports it can do. Null until the first fetch lands. */
+  capabilities: LobbyCapabilities | null
   /** Handed to the scene, which calls it once it knows what it mounted. */
   reportCapability: (capability: CharacterCapability) => void
 }
@@ -42,8 +65,35 @@ export function useReception({ adapter, reducedMotion }: UseReceptionOptions): R
   const capabilityRef = useRef<CharacterCapability>(NO_CHARACTER)
   const [capability, setCapability] = useState<CharacterCapability>(NO_CHARACTER)
 
+  // Only the live adapter has a backend to talk to; in demo mode there is
+  // deliberately nothing to call.
+  const api = useMemo(() => (LOBBY_SERVICE_MODE === 'live' ? liveReceptionApi() : null), [])
+  const [capabilities, setCapabilities] = useState<LobbyCapabilities | null>(null)
+  const capabilitiesRef = useRef<LobbyCapabilities | null>(null)
+
+  useEffect(() => {
+    if (!api) return
+    const controller = new AbortController()
+    void api.capabilities({ signal: controller.signal }).then((report) => {
+      if (controller.signal.aborted) return
+      capabilitiesRef.current = report
+      setCapabilities(report)
+    })
+
+    return () => controller.abort()
+  }, [api])
+
   const support = useMemo(detectSpeechSupport, [])
-  const voiceInput = useMemo(() => (support.input ? createVoiceInput() : null), [support.input])
+  // Server transcription where the deployment has it, the browser recogniser
+  // otherwise. Same interface either way, so nothing downstream branches on it.
+  const serverTranscription = capabilities?.transcription.configured === true
+  const voiceInput = useMemo(() => {
+    if (api && serverTranscription && serverTranscriptionSupported()) {
+      return createServerVoiceInput(api)
+    }
+
+    return support.input ? createVoiceInput() : null
+  }, [api, serverTranscription, support.input])
   const voiceOutput = useMemo(() => (support.output ? createVoiceOutput() : null), [support.output])
 
   const conversation = useMemo(
@@ -57,11 +107,15 @@ export function useReception({ adapter, reducedMotion }: UseReceptionOptions): R
         inputReason: support.inputReason,
         outputReason: support.outputReason,
         reducedMotion,
+        api,
+        // Read through a ref so enabling a server voice mid-session takes
+        // effect on the next reply without rebuilding the conversation.
+        serverSpeech: () => capabilitiesRef.current?.speech.configured === true,
       }),
     // `reducedMotion` is pushed in below rather than rebuilding the
     // conversation, which would drop the transcript mid-exchange.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [adapter, signal, voiceInput, voiceOutput, support.inputReason, support.outputReason],
+    [adapter, signal, voiceInput, voiceOutput, support.inputReason, support.outputReason, api],
   )
 
   useEffect(() => {
@@ -99,5 +153,12 @@ export function useReception({ adapter, reducedMotion }: UseReceptionOptions): R
     setCapability(next)
   }, [])
 
-  return { signal, conversation, snapshot, capability, reportCapability }
+  const mode: ReceptionMode =
+    LOBBY_SERVICE_MODE !== 'live'
+      ? 'demo'
+      : capabilities?.mode === 'live'
+        ? 'live'
+        : 'unavailable'
+
+  return { signal, conversation, snapshot, capability, mode, capabilities, reportCapability }
 }

@@ -15,6 +15,7 @@
  * - **Mode C, `none`.** The character has no drivable mouth. The body animates,
  *   captions carry the words, and nothing pretends otherwise.
  */
+import { scheduleTimeMs } from './signal'
 import type { ReceptionSignal } from './signal'
 import { blendPose, visemeAt, visemePose } from './visemes'
 import type { FacePose } from './visemes'
@@ -31,14 +32,17 @@ export function sampleLipSync(signal: ReceptionSignal, nowMs: number): FacePose 
   if (!signal.speaking) return EMPTY
 
   switch (signal.lipSync) {
-    case 'timed': {
+    case 'provider-viseme':
+    case 'text-estimated': {
       if (signal.timeline.length === 0) return EMPTY
-      const at = nowMs - signal.startedAtMs + signal.offsetMs
+      // The audio clock when audio is playing, the wall clock otherwise. The
+      // two modes read the same way; what differs is where the cues came from.
+      const at = scheduleTimeMs(signal, nowMs)
       if (at < 0) return EMPTY
       const { viseme, next, blend } = visemeAt(signal.timeline, at)
       return blendPose(visemePose(viseme), visemePose(next), blend)
     }
-    case 'audio': {
+    case 'audio-reactive': {
       const level = clamp01(signal.envelope?.() ?? 0)
       if (level <= 0.01) return EMPTY
       // An envelope says how loud, never which sound, so this opens the jaw and
@@ -96,8 +100,9 @@ function clamp01(value: number): number {
  * are in the wild, and a rig only applies the names it actually has.
  */
 export function sampleNativeVisemes(signal: ReceptionSignal, nowMs: number): Record<string, number> {
-  if (!signal.speaking || signal.lipSync !== 'timed' || signal.timeline.length === 0) return {}
-  const at = nowMs - signal.startedAtMs + signal.offsetMs
+  const scheduled = signal.lipSync === 'text-estimated' || signal.lipSync === 'provider-viseme'
+  if (!signal.speaking || !scheduled || signal.timeline.length === 0) return {}
+  const at = scheduleTimeMs(signal, nowMs)
   if (at < 0) return {}
   const { viseme, next, blend } = visemeAt(signal.timeline, at)
   const out: Record<string, number> = {}

@@ -110,7 +110,17 @@ export interface VoiceInputEvents {
 export interface VoiceInput {
   /** Requests the microphone. Only ever called from a visitor action. */
   start(events: VoiceInputEvents): Promise<boolean>
+  /** The visitor has finished speaking: keep what was said. */
   stop(): void
+  /**
+   * Abandon the capture entirely.
+   *
+   * Different from `stop` where a recording has to be uploaded to become text:
+   * stopping means "I have finished, transcribe that", cancelling means "throw
+   * it away". Without the distinction, interrupting a turn still sends the
+   * audio and a transcript arrives for a question nobody is waiting on.
+   */
+  cancel?(): void
   readonly listening: boolean
 }
 
@@ -260,6 +270,12 @@ export function createVoiceInput(lang = 'en-GB'): VoiceInput | null {
     stop() {
       teardown()
     },
+
+    // The browser recogniser produces its text as it goes, so there is no
+    // upload to abandon: cancelling and stopping are the same teardown.
+    cancel() {
+      teardown()
+    },
   }
 }
 
@@ -379,5 +395,237 @@ export function rememberVoiceOutput(enabled: boolean): void {
     window.localStorage?.setItem(VOICE_OUTPUT_KEY, enabled ? 'on' : 'off')
   } catch {
     // Private mode or blocked storage. Not remembering is not worth failing over.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Server-side transcription
+// ---------------------------------------------------------------------------
+
+/** Longest single recording, in seconds. A front-desk question is shorter. */
+const MAX_RECORDING_SECONDS = 45
+
+/** Container types worth asking MediaRecorder for, best first. */
+const RECORDING_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
+
+function pickRecordingType(): string | null {
+  if (typeof MediaRecorder === 'undefined') return null
+  for (const type of RECORDING_TYPES) {
+    if (MediaRecorder.isTypeSupported(type)) return type
+  }
+
+  return null
+}
+
+export function serverTranscriptionSupported(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    window.isSecureContext !== false &&
+    typeof MediaRecorder !== 'undefined' &&
+    Boolean(navigator.mediaDevices?.getUserMedia) &&
+    pickRecordingType() !== null
+  )
+}
+
+interface TranscribeClient {
+  transcribe(audio: Blob, init?: { signal?: AbortSignal }): Promise<
+    { ok: true; data: string } | { ok: false; reason: string; code: string; retryable: boolean }
+  >
+}
+
+/**
+ * Voice input that records and sends the audio to be transcribed.
+ *
+ * The same `VoiceInput` shape as the browser recogniser, so the conversation
+ * does not know or care which one it was handed — only that one of them is
+ * listening and that stopping releases the microphone.
+ *
+ * The honest difference, which the interface states rather than hides: the
+ * browser recogniser may process speech on the device or in the vendor's cloud
+ * depending on the browser, while this one definitely sends the recording to
+ * the configured service. Neither is stored. Claiming the browser one is always
+ * local would be a guess about someone else's implementation.
+ */
+export function createServerVoiceInput(client: TranscribeClient): VoiceInput | null {
+  if (!serverTranscriptionSupported()) return null
+
+  let stream: MediaStream | null = null
+  let recorder: MediaRecorder | null = null
+  let context: AudioContext | null = null
+  let levelTimer: number | null = null
+  let stopTimer: number | null = null
+  let controller: AbortController | null = null
+  let listening = false
+  let cancelled = false
+
+  function releaseCapture(): void {
+    if (levelTimer !== null) {
+      window.clearInterval(levelTimer)
+      levelTimer = null
+    }
+    if (stopTimer !== null) {
+      window.clearTimeout(stopTimer)
+      stopTimer = null
+    }
+    if (recorder && recorder.state !== 'inactive') {
+      try {
+        recorder.stop()
+      } catch {
+        // Stopping a recorder that already stopped is not an error.
+      }
+    }
+    recorder = null
+    if (stream) {
+      for (const track of stream.getTracks()) track.stop()
+      stream = null
+    }
+    if (context) {
+      void context.close().catch(() => undefined)
+      context = null
+    }
+  }
+
+  return {
+    get listening() {
+      return listening
+    },
+
+    async start(events) {
+      if (listening) return true
+      cancelled = false
+      controller = new AbortController()
+
+      const mimeType = pickRecordingType()
+      if (!mimeType) {
+        events.onError?.('This browser cannot record audio. Typing still works.')
+        return false
+      }
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      } catch (error) {
+        const name = (error as { name?: string })?.name
+        events.onError?.(
+          name === 'NotAllowedError'
+            ? 'Microphone access was declined, so voice input is off. Typing still works.'
+            : 'The microphone could not be opened. Typing still works.',
+        )
+        releaseCapture()
+        return false
+      }
+
+      listening = true
+      const chunks: Blob[] = []
+
+      try {
+        const AudioContextCtor =
+          window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+        if (AudioContextCtor) {
+          context = new AudioContextCtor()
+          const analyser = context.createAnalyser()
+          analyser.fftSize = 512
+          context.createMediaStreamSource(stream).connect(analyser)
+          const buffer = new Uint8Array(new ArrayBuffer(analyser.fftSize))
+          levelTimer = window.setInterval(() => {
+            analyser.getByteTimeDomainData(buffer)
+            let sum = 0
+            for (let i = 0; i < buffer.length; i += 1) {
+              const sample = (buffer[i] - 128) / 128
+              sum += sample * sample
+            }
+            events.onLevel?.(Math.min(1, Math.sqrt(sum / buffer.length) * 4))
+          }, 60)
+        }
+      } catch {
+        // No level meter is cosmetic; the recording still happens.
+      }
+
+      try {
+        recorder = new MediaRecorder(stream, { mimeType })
+      } catch {
+        events.onError?.('This browser could not start a recording. Typing still works.')
+        releaseCapture()
+        listening = false
+        return false
+      }
+
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data.size > 0) chunks.push(event.data)
+      })
+
+      recorder.addEventListener('stop', () => {
+        const wasCancelled = cancelled
+        const signal = controller?.signal
+        releaseCapture()
+        listening = false
+        events.onLevel?.(0)
+
+        if (wasCancelled) {
+          events.onEnd?.()
+          return
+        }
+
+        const audio = new Blob(chunks, { type: mimeType.split(';')[0] })
+        if (audio.size < 1024) {
+          events.onError?.('Nothing was heard. Press Talk and try again, or type instead.')
+          events.onEnd?.()
+          return
+        }
+
+        void client
+          .transcribe(audio, { signal })
+          .then((result) => {
+            // The visitor may have cancelled while this was in flight; a
+            // transcript that arrives after that must go nowhere.
+            if (cancelled || signal?.aborted) {
+              events.onEnd?.()
+              return
+            }
+            if (result.ok) events.onFinal?.(result.data)
+            else events.onError?.(result.reason)
+            events.onEnd?.()
+          })
+          .catch(() => {
+            events.onError?.('That recording could not be transcribed. Typing still works.')
+            events.onEnd?.()
+          })
+      })
+
+      recorder.start()
+
+      // A recording with no end is a bill with no end.
+      stopTimer = window.setTimeout(() => {
+        if (recorder && recorder.state === 'recording') recorder.stop()
+      }, MAX_RECORDING_SECONDS * 1000)
+
+      return true
+    },
+
+    stop() {
+      if (!listening) {
+        releaseCapture()
+        return
+      }
+      // A deliberate stop finishes the recording and transcribes it; only
+      // `cancel` throws it away. The recorder's `stop` handler does the rest.
+      if (recorder && recorder.state === 'recording') {
+        recorder.stop()
+        return
+      }
+      releaseCapture()
+      listening = false
+    },
+
+    cancel() {
+      cancelled = true
+      controller?.abort()
+      if (recorder && recorder.state === 'recording') {
+        // The stop handler sees `cancelled` and throws the audio away.
+        recorder.stop()
+        return
+      }
+      releaseCapture()
+      listening = false
+    },
   }
 }
