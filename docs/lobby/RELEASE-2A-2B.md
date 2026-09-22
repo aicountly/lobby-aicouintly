@@ -121,8 +121,8 @@ one.** The exact numbers, and this caveat, are in
 
 | | |
 | --- | --- |
-| `npm run test:reception` | **78 / 78**, ~15 s, no browser |
-| `npm run test:ui` | **22 / 22**, ~75 s |
+| `npm run test:reception` | **80 / 80**, ~15 s, no browser |
+| `npm run test:ui` | **23 / 23**, ~75 s |
 | `npm run build` | clean, `tsc -b` clean |
 | `npm run measure:avatar` | 3 configurations, ~45 s, zero console errors in any |
 
@@ -188,7 +188,7 @@ suggestion chips and the back link were 30–32 px.
 | --- | --- |
 | No licensed photoreal human rig | Unresolved, and unresolvable from this environment. The shipped character is an interim stylised one. When a rig exists, it is a file copy plus a manifest entry |
 | No language model | `VITE_LOBBY_RECEPTION_AI_PATH` is unset. Replies are keyword-matched. The relay must be server-side; a browser-visible credential is a published credential |
-| No server-side voice | Mode B stays unexercised until one exists |
+| No server-side voice | Replies are spoken by the browser's own engine, which needs no credential but sounds synthetic and varies by platform. A natural voice needs a relay behind this product's PHP API with the credential governed by Console; `VITE_LOBBY_RECEPTION_AI_PATH` is unset. Mode B stays unexercised until one exists |
 | Photographed materials | Still the honest gap from 2A — generated stone and wool lose to photography at very close range |
 
 ## Running it

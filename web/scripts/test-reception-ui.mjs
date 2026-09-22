@@ -244,6 +244,16 @@ try {
   const hudButtons = await scene.locator('.lobby-hud-top button').allInnerTexts()
   check('Talk is in the 3D view itself', hudButtons.includes('Talk'), hudButtons.join(' | '))
 
+  const speechControl = await scene.evaluate(() => {
+    const button = document.querySelector('.lobby-button-speech')
+    return button ? { pressed: button.getAttribute('aria-pressed'), label: button.textContent.trim() } : null
+  })
+  check(
+    'sound is switchable from the room, and starts off',
+    speechControl !== null && speechControl.pressed === 'false',
+    JSON.stringify(speechControl),
+  )
+
   // And walking up to the counter has to be met with something. It used to be
   // met with silence: the greeting only fired when a panel was opened.
   await scene.evaluate(WATCH_CHIP, '.lobby-hud-actions .lobby-state-chip')

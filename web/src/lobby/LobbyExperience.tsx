@@ -20,6 +20,7 @@ import { NavigationController } from './navigation/controller'
 import { LobbyCanvas } from './scene/LobbyCanvas'
 import { useLobbyAssets } from './assets/useLobbyAssets'
 import { detectCharacterMode, driveMeasurement } from './reception/measure'
+import { rememberVoiceOutput } from './reception/speech'
 import { useReception } from './reception/useReception'
 import { getLobbyServices } from './services/registry'
 import { useReducedMotion } from './useReducedMotion'
@@ -98,6 +99,14 @@ export function LobbyExperience({ children, actions }: Props) {
     setOpenOnService('team')
     setServicesOpen(true)
   }, [controller, reception.conversation, reception.snapshot.voice])
+
+  const toggleSpeech = useCallback(
+    (enabled: boolean) => {
+      reception.conversation.setVoiceOutput(enabled)
+      rememberVoiceOutput(enabled)
+    },
+    [reception.conversation],
+  )
 
   // Walking up to the counter is how you greet someone in a lobby. Before this,
   // the character stood there in silence until a panel was opened.
@@ -218,6 +227,7 @@ export function LobbyExperience({ children, actions }: Props) {
             receptionState={reception.snapshot.state}
             reception={reception.snapshot}
             onTalk={talk}
+            onToggleSpeech={toggleSpeech}
             actions={actions}
             onOpenServices={openServices}
             onStandardView={() => {

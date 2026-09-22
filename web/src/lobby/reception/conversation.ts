@@ -454,6 +454,14 @@ export function createReceptionConversation(options: ConversationOptions): Recep
 
     async startVoice() {
       if (disposed || !voiceInput || listening) return
+      // Voice in implies voice out. Someone who presses Talk is holding a
+      // spoken conversation, and a character that listens to you and then
+      // answers in silence is a worse surprise than one that speaks. This is
+      // still never autoplay: it takes a deliberate press to get here.
+      if (voiceOutput && !outputEnabled) {
+        outputEnabled = true
+        setAudio('silent')
+      }
       // Cancel whatever is being said before opening the microphone, or the
       // character talks over the visitor and hears itself.
       guard.cancel('visitor pressed talk')

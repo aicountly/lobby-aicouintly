@@ -34,6 +34,8 @@ interface Props {
   reception: ConversationSnapshot
   /** Starts voice input, or opens the conversation when voice is unavailable. */
   onTalk: () => void
+  /** Turns spoken replies on or off. */
+  onToggleSpeech: (enabled: boolean) => void
   /** Host controls, rendered after the lobby's own. */
   actions?: ReactNode
 }
@@ -49,6 +51,7 @@ export function LobbyHud({
   receptionState,
   reception,
   onTalk,
+  onToggleSpeech,
   actions,
 }: Props) {
   const [snapshot, setSnapshot] = useState<NavigationSnapshot>({
@@ -86,6 +89,23 @@ export function LobbyHud({
           >
             {reception.voice.listening ? 'Stop listening' : 'Talk'}
           </button>
+          {/* Sound was only switchable from inside the panel, which is the same
+              mistake as the Talk button: unreachable from the room the visitor
+              is standing in. */}
+          {reception.voice.outputAvailable ? (
+            <button
+              type="button"
+              className={`lobby-button lobby-button-speech${reception.voice.outputEnabled ? ' is-on' : ''}`}
+              aria-pressed={reception.voice.outputEnabled}
+              title={reception.voice.outputEnabled ? 'Replies are read aloud' : 'Replies are silent'}
+              onClick={() => onToggleSpeech(!reception.voice.outputEnabled)}
+            >
+              <span aria-hidden="true">{reception.voice.outputEnabled ? '🔊' : '🔇'}</span>
+              <span className="lobby-visually-hidden">
+                {reception.voice.outputEnabled ? 'Turn spoken replies off' : 'Turn spoken replies on'}
+              </span>
+            </button>
+          ) : null}
           <button type="button" className="lobby-button lobby-button-primary" onClick={onOpenServices}>
             Reception services
           </button>

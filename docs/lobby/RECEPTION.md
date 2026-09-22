@@ -39,8 +39,23 @@ Two ways in, and neither needs a panel opened first:
   captions carry both sides. A browser with no speech recognition lands in the
   conversation panel instead, where the reason is stated.
 
+Sound is a button in the 3D view too. It starts off — walking in must not be
+met with a page that talks at you — and pressing **Talk** turns it on, because
+someone holding a spoken conversation expects a spoken answer. Typing does not.
+
 The panel is still there for typing, for the booking and enquiry journeys, and
 for reading the transcript back. It is not the only way to talk.
+
+### What the voice is, and is not
+
+It is the browser's own speech synthesis: no credential, no upload, and a voice
+that varies by operating system. On some platforms it is flat and obviously
+synthetic. **A natural-sounding voice is a different thing and does not exist
+in this build** — it needs a server-side text-to-speech relay behind this
+product's own PHP API, with the model credential governed by Aicountly Console,
+and `VITE_LOBBY_RECEPTION_AI_PATH` is unset. That relay is also what would make
+lip-sync Mode B live, since it is the only thing that would produce an audio
+stream to analyse.
 
 The captions matter beyond convenience: they are the other half of lip-sync
 Mode C. A character with no drivable mouth animates its body and its words

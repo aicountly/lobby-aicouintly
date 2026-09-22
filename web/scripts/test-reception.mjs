@@ -997,6 +997,32 @@ await asyncTest('replies are only spoken when the visitor asked for it', async (
   convo.dispose()
 })
 
+await asyncTest('pressing Talk makes it answer aloud', async () => {
+  const adapter = fakeAdapter(OK_REPLY)
+  const voice = fakeVoiceInput()
+  const speaker = fakeVoiceOutput()
+  const { convo } = newConversation(adapter, { voiceInput: voice, voiceOutput: speaker })
+  assert.equal(convo.snapshot().voice.outputEnabled, false, 'silent until something asks for sound')
+
+  await convo.startVoice()
+  assert.equal(convo.snapshot().voice.outputEnabled, true, 'a spoken question expects a spoken answer')
+
+  voice.state.events.onFinal('what are your opening hours')
+  await new Promise((r) => setTimeout(r, 0))
+  assert.equal(speaker.state.spoken.length, 1, speaker.state.spoken.join(' | '))
+  convo.dispose()
+})
+
+await asyncTest('typing still does not turn the sound on', async () => {
+  const adapter = fakeAdapter(OK_REPLY)
+  const speaker = fakeVoiceOutput()
+  const { convo } = newConversation(adapter, { voiceOutput: speaker })
+  await convo.ask('what are your opening hours')
+  assert.equal(convo.snapshot().voice.outputEnabled, false)
+  assert.deepEqual(speaker.state.spoken, [])
+  convo.dispose()
+})
+
 await asyncTest('a word boundary re-anchors the mouth without rewinding it', async () => {
   const adapter = fakeAdapter(OK_REPLY)
   const speaker = fakeVoiceOutput()
