@@ -40,10 +40,14 @@ make and are not true:
   [Receipts](#receipts).
 - **Nobody is contacted.** Asking for a person produces a handover that says
   what *would* happen. It does not send anything.
-- **The character is not photoreal.** It is generated in code: an articulated
-  figure with a procedural face. It is stylised, it is labelled as a
-  demonstration character on its badge and above its head, and it is not a scan
-  or a sculpt.
+- **The character is not photoreal.** It is a real human model now rather than
+  the generated stylised figure — a parametric human from the MakeHuman
+  ecosystem, with the full ARKit 52 blendshape set and a proper humanoid
+  skeleton. But it is not a scan and not a sculpt, it arrives in a casual top
+  rather than business dress, and it ships with **no animation clips**: the body
+  is posed in code, which the capability panel says out loud.
+  See [ASSETS.md](ASSETS.md) for the licence, the budgets it breaks and what
+  reducing it cost.
 - **Where audio goes depends on which engine is configured, and the panel says
   which.** With the browser engine, the reply text and the recording stay with
   the browser's own speech implementation — which may process on the device or
@@ -312,9 +316,26 @@ what it has, one with neither gets Mode C.
 
 ## The face
 
-No licensed rigged human character was obtainable from this build (see
-[ASSETS.md](ASSETS.md) for what was checked). Rather than declare a face in a
-manifest and leave it missing, the face is generated, like the textures.
+The shipped character supplies its own: **all 52 ARKit blendshapes**, with 11 of
+the 15 OVR visemes native and the other four built from the ARKit set by
+`VISEME_TO_ARKIT`. It is CC0, and [ASSETS.md](ASSETS.md) records where it came
+from and the non-commercial candidate that was rejected.
+
+A character with a real viseme set is also what exposed a bug that had been
+latent since Phase 2B. The per-frame face pose is composed into a reused object
+to avoid an allocation every frame, and the expression pass only overwrote the
+ARKit controls it knew about. `viseme_*` names are not among them, so they
+survived into the next frame — and because the lip-sync pass *adds*, every
+viseme that ever fired climbed to 1 and stayed there. Six pinned at once held
+the mouth permanently open. `composeFacePose` in `faceRig.ts` now clears the
+whole pose, and four tests in `test-reception.mjs` pin it; they fail against the
+old code.
+
+### The generated fallback
+
+The lobby still ships its own figure, and still mounts it whenever no model is
+supplied — so a fresh clone with no `.glb` renders a complete room. It is built
+the same way the textures are.
 
 - The **head shell** carries **seventeen genuine morph targets**, ARKit named,
   built as vertex deltas over a parametric skull and marked

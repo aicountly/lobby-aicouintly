@@ -289,8 +289,11 @@ try {
   const sceneCapability = await scene.locator('.lobby-capability').innerText()
   check(
     'the 3D panel reports the mounted character and its lip-sync mode',
-    /procedural character/i.test(sceneCapability) &&
-      /facial controls/i.test(sceneCapability) &&
+    // A supplied model is mounted now, so the panel must name that rather than
+    // the generated placeholder — and must say the body is posed in code, or
+    // "0/8 animation roles" reads as a character that is frozen.
+    /supplied model/i.test(sceneCapability) &&
+      /posed in code/i.test(sceneCapability) &&
       // Named for what it is. It must not claim the timings came from a
       // speech provider, because in this mode nothing measures the audio.
       /lip-sync text-estimated/i.test(sceneCapability) &&
