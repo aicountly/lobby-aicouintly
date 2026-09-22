@@ -30,9 +30,11 @@ make and are not true:
 - **In demo mode there is no language model.** Replies are matched from the
   question by keyword, and every one of them is written out in full in
   `web/src/lobby/services/demoAdapter.ts`.
-- **No model credential is configured in this repository.** The live path is
-  implemented and tested against fixtures; whether it answers depends on
-  `LOBBY_AI_API_KEY` in the API's own `.env` on the server.
+- **No model credential is configured in this repository, and none is meant to
+  be on the server either.** The live path is implemented and tested against
+  fixtures; whether it answers depends on a credential bound to this product in
+  Aicountly Console, fetched per request and held in memory. See
+  [Where the key lives](#where-the-key-lives).
 - **Nothing is booked, sent or stored.** Every receipt carries `demo: true`, and
   the character is structurally unable to describe one as real — see
   [Receipts](#receipts).
@@ -82,6 +84,52 @@ unchanged.
 The token travels in `X-Lobby-Session`, a header rather than a cookie, so a
 cross-site form post cannot carry it and classic CSRF does not apply. An Origin
 check is the second lock.
+
+### Where the key lives
+
+Not here, and not in this server's `.env` either.
+
+`console.aicountly.org` is the fleet's system of record for AI provider keys.
+Lobby asks for its credential on
+`GET {CONSOLE_API_URL}/ai/credentials/resolve?domain={host}&module=reception`,
+authenticated by the shared `CONSOLE_SERVICE_KEY`, and holds the answer in
+process memory and — where APCu exists — in shared memory, for the few minutes
+Console says it may. **Nothing is written to disk.** On a host whose front door
+is open to the internet by design, that is the point: there is no long-lived
+provider key sitting in a file next to the code.
+
+`server-php/src/Ai/ConsoleCredentials.php` is the whole of it, and it is the
+same class the rest of the fleet uses, adapted. It does not store a key, mint
+one, cache one to disk, or accept one from a request.
+
+Three rules this product does not bend:
+
+- **A binding for another provider is refused, not adapted.** If the `reception`
+  module is bound to a Google credential, reception reports unavailable.
+  Rewriting the request to suit it would post that key to Anthropic's endpoint —
+  disclosing a live key to a third party, and failing anyway.
+- **A configured-but-silent Console does not fall back to a local key.**
+  `AI_CREDENTIALS_SOURCE` defaults to `console` here, so a Console outage makes
+  reception say it is unavailable, which is true. The fleet default is `auto`
+  because other products had a key in `.env` to migrate off; reception never
+  did. `auto` is still honoured if you set it, and it logs each time it falls
+  back.
+- **`LOBBY_AI_API_KEY` is for a laptop.** It is read only on a host with no
+  `CONSOLE_API_URL`/`CONSOLE_SERVICE_KEY` at all.
+
+Console is also told what the call cost: identifiers, token counts, latency and
+an outcome, posted fire-and-forget to `/ai/usage`. Never the visitor's words,
+never the reply, never the key. A local-development key reports nothing, because
+it has no Console identifiers to report against.
+
+The speech and transcription endpoints stay vendor-neutral in `.env` — Lobby
+owns their URL and request shape — but their key can come from Console too, via
+`LOBBY_TTS_AUTH_FROM_CONSOLE` / `LOBBY_STT_AUTH_FROM_CONSOLE`. That one is
+opt-in rather than automatic: nothing here can check that a Console-held key
+belongs to the vendor a free-form URL points at, and a key sent to the wrong
+vendor is a disclosed key.
+
+Setting it all up: [CONSOLE-AI.md](CONSOLE-AI.md).
 
 ### Limits, and what they are for
 

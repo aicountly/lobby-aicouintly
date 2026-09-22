@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Aicountly\Api\Provider;
 
+use Aicountly\Api\Ai\ConsoleCredentials;
 use Aicountly\Api\Env;
 use Aicountly\Api\Http;
 use Aicountly\Api\Json;
@@ -38,7 +39,16 @@ final class HttpSpeech implements SpeechProvider
 
     public function configured(): bool
     {
-        return Env::get('LOBBY_TTS_URL') !== '' && Env::get('LOBBY_TTS_BODY_TEMPLATE') !== '';
+        if (Env::get('LOBBY_TTS_URL') === '' || Env::get('LOBBY_TTS_BODY_TEMPLATE') === '') {
+            return false;
+        }
+
+        // An operator who asked for the Console key and has not bound one is
+        // not "configured without auth" — reporting that would send an
+        // unauthenticated request and hand the visitor a vendor's 401 as if the
+        // voice had broken. Better to say the voice is not configured and let
+        // the browser speak, which is what that answer already means here.
+        return !self::brokered() || ConsoleCredentials::brokeredAuth(ConsoleCredentials::MODULE_SPEECH) !== null;
     }
 
     public function unconfiguredReason(): string
@@ -49,8 +59,13 @@ final class HttpSpeech implements SpeechProvider
         if (Env::get('LOBBY_TTS_URL') === '') {
             return 'LOBBY_TTS_URL is not set. No server-side voice is configured, so replies fall back to the browser speech engine where one exists.';
         }
+        if (Env::get('LOBBY_TTS_BODY_TEMPLATE') === '') {
+            return 'LOBBY_TTS_BODY_TEMPLATE is not set, so this API does not know what request shape the configured voice endpoint expects.';
+        }
 
-        return 'LOBBY_TTS_BODY_TEMPLATE is not set, so this API does not know what request shape the configured voice endpoint expects.';
+        return 'LOBBY_TTS_AUTH_FROM_CONSOLE is on, but Console returned no credential for the "'
+            . ConsoleCredentials::MODULE_SPEECH . '" module under ' . ConsoleCredentials::domain()
+            . '. Bind one there, or set LOBBY_TTS_AUTH_VALUE and turn the switch off.';
     }
 
     public function speak(string $text): array
@@ -81,10 +96,9 @@ final class HttpSpeech implements SpeechProvider
             ->timeouts(5, (int) Env::get('LOBBY_TTS_TIMEOUT_SECONDS', '20'))
             ->maxResponseBytes($maxBytes > 0 ? $maxBytes : self::DEFAULT_MAX_BYTES);
 
-        $authHeader = Env::get('LOBBY_TTS_AUTH_HEADER');
-        $authValue = Env::get('LOBBY_TTS_AUTH_VALUE');
-        if ($authHeader !== '' && $authValue !== '') {
-            $request = $request->header($authHeader, $authValue);
+        $auth = self::auth();
+        if ($auth !== null) {
+            $request = $request->header($auth['name'], $auth['value']);
         }
 
         $response = $request->send('POST', $body);
@@ -145,5 +159,38 @@ final class HttpSpeech implements SpeechProvider
         );
 
         return Json::decode($rendered) === null ? null : $rendered;
+    }
+
+    /**
+     * How this endpoint is authenticated.
+     *
+     * Console when LOBBY_TTS_AUTH_FROM_CONSOLE is on, so the key rotates in one
+     * place like every other provider key in the fleet. Otherwise the pair in
+     * this product's .env, which is how a speech vendor that Console does not
+     * carry is configured.
+     *
+     * Opt-in rather than Console-first on purpose. The URL here is free-form
+     * configuration, so nothing can check that a Console-held key belongs to
+     * the vendor that URL points at — and a key sent to the wrong vendor is a
+     * disclosed key. The operator says which one they mean.
+     *
+     * @return array{name: string, value: string}|null
+     */
+    private static function auth(): ?array
+    {
+        if (self::brokered()) {
+            return ConsoleCredentials::brokeredAuth(ConsoleCredentials::MODULE_SPEECH);
+        }
+
+        $header = Env::get('LOBBY_TTS_AUTH_HEADER');
+        $value = Env::get('LOBBY_TTS_AUTH_VALUE');
+
+        return ($header !== '' && $value !== '') ? ['name' => $header, 'value' => $value] : null;
+    }
+
+    private static function brokered(): bool
+    {
+        return ConsoleCredentials::isConfigured()
+            && in_array(strtolower(Env::get('LOBBY_TTS_AUTH_FROM_CONSOLE')), ['1', 'true', 'yes', 'on'], true);
     }
 }

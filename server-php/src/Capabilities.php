@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Aicountly\Api;
 
+use Aicountly\Api\Ai\ConsoleCredentials;
 use Aicountly\Api\Provider\AnthropicConversation;
 use Aicountly\Api\Provider\HttpSpeech;
 use Aicountly\Api\Provider\HttpTranscription;
@@ -78,9 +79,38 @@ final class Capabilities
             $report['model'] = $conversation->model();
             $report['stateDir'] = RateLimit::directory();
             $report['stateDirWritable'] = is_writable(RateLimit::directory());
+            $report['credentials'] = self::credentialSource($conversation->source());
         }
 
         return $report;
+    }
+
+    /**
+     * Where the reception credential came from — for an operator, never public.
+     *
+     * No key material and no service key: the domain and the module are names
+     * an operator needs in order to find the right row in Console, and neither
+     * is a secret. `model` is Console's, when Console named one.
+     *
+     * @return array<string, mixed>
+     */
+    private static function credentialSource(string $source): array
+    {
+        $console = ConsoleCredentials::isConfigured();
+        $status = $console ? ConsoleCredentials::status() : null;
+
+        return [
+            'source' => $source,
+            'console' => [
+                'configured' => $console,
+                'domain' => $console ? ConsoleCredentials::domain() : null,
+                'module' => ConsoleCredentials::MODULE_RECEPTION,
+                'available' => $status['available'] ?? false,
+                'provider' => $status['provider'] ?? null,
+                'model' => $status['model'] ?? null,
+                'hint' => $status['admin_hint'] ?? null,
+            ],
+        ];
     }
 
     /**

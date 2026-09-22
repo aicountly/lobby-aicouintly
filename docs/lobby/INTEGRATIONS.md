@@ -76,10 +76,18 @@ credentials**, which means the credential is never in this repository and never
 in the browser: every `VITE_*` value is inlined into the bundle at build time
 and is public. A key in one is a published key.
 
-So the reception AI must answer through this product's own PHP API, which
-obtains its credential from Console server-side. That route does not exist yet.
-`VITE_LOBBY_RECEPTION_AI_PATH` is unset by default and the capability reports
-unavailable; set it once the route is built.
+So the reception AI answers through this product's own PHP API, which obtains
+its credential from Console server-side on
+`GET /ai/credentials/resolve?domain=lobby.aicountly.com&module=reception`. That
+route now exists: `server-php/src/Ai/ConsoleCredentials.php`, wired into
+`POST /api/lobby/reception`. Nothing in the browser and nothing in this server's
+`.env` is a provider key — see
+[RECEPTION.md → Where the key lives](RECEPTION.md#where-the-key-lives) and the
+setup procedure in [CONSOLE-AI.md](CONSOLE-AI.md).
+
+The older `VITE_LOBBY_RECEPTION_AI_PATH` contract below predates that route and
+is still honoured for a deployment pointing at something else; it is unset by
+default.
 
 The client side is already written against a contract this repository owns:
 

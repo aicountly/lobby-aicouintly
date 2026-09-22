@@ -20,12 +20,15 @@ Stated first because they changed what could be built.
    PHP — a front controller, a `.env` reader and a portal auth relay. No
    framework, no database, no ORM, no composer manifest. Phase 2C builds on what
    is there rather than introducing a framework.
-2. **There is no Console credential interface.** The only Console reference in
-   the repository is `https://console.aicountly.org/api/product-icons/{appId}`,
-   a product-icon CDN for the app launcher. No credential-broker endpoint was
-   invented; the model credential is read from the API's own `.env` on the
-   server, and `Provider/Contracts.php` is the seam a Console-backed credential
-   source would slot into later.
+2. ~~**There is no Console credential interface.**~~ **This was wrong, and it
+   was corrected before this branch was finished.** The claim was true of *this
+   repository* — the only Console reference here was a product-icon CDN — and I
+   drew a fleet-wide conclusion from a single-repository search. The fleet does
+   have one: `GET /ai/credentials/resolve` on `console.aicountly.org`, already
+   used by Books, Calendar, Appointments and Contracts. Reception now resolves
+   its credential from it like everything else, through
+   `server-php/src/Ai/ConsoleCredentials.php` — see
+   [CONSOLE-AI.md](CONSOLE-AI.md) and the amendment at the end of this note.
 3. **No AI provider was already configured.** Nothing in the repository
    referenced any provider. So the provider integration is new, and it ships
    unconfigured.
@@ -188,3 +191,87 @@ On a real laptop and a real phone, once a credential is configured:
 Also worth checking: with sound remembered on, reload the page and ask
 something. If the browser blocks autoplay you should get **"Tap to hear this
 reply"**, not silence.
+
+---
+
+## Amendment — reception now takes its key from Console
+
+Added to this branch after the note above was written, because premise 2 was
+wrong.
+
+### What was wrong
+
+I reported that no Console credential interface existed. I had searched this
+repository, found only the product-icon CDN, and stated a conclusion about the
+fleet. The fleet has had one for some time:
+`GET /ai/credentials/resolve?domain={host}&module={key}`, service-key
+authenticated, answering with the key, the model, the provider's base URL and
+how the key is presented — already used by Books, Calendar, Appointments and
+Contracts. The premise should have read "no Console credential interface *is
+used in this repository*", which is a statement about work not yet done rather
+than about what is available.
+
+The consequence was real, not cosmetic: reception was built to read
+`LOBBY_AI_API_KEY` from the server's own `.env`, which is exactly the
+arrangement the fleet moved away from.
+
+### What changed
+
+- **`server-php/src/Ai/ConsoleCredentials.php`** — new, and the same class the
+  rest of the fleet uses, adapted. Resolves this deployment's credential from
+  Console, holds it in process memory and, where APCu exists, shared memory, for
+  the few minutes Console allows. **Nothing is written to disk.** A failure is
+  remembered for thirty seconds in-process, so a Console outage costs one
+  timeout per worker rather than one per question asked of it.
+- **`Provider/AnthropicConversation.php`** — the key, the model, the base URL
+  and the auth header now come from that binding. A binding for another provider
+  is refused rather than adapted: rewriting the request to suit it would post a
+  live key belonging to another vendor to Anthropic's endpoint. `max_tokens`
+  from Console is clamped to a front-desk ceiling rather than honoured outright.
+- **`AI_CREDENTIALS_SOURCE`** — the fleet's switch, with the fleet's meaning.
+  Default `console` here rather than the fleet's `auto`, because reception never
+  shipped a key in `.env` and so has no migration to protect. `LOBBY_AI_API_KEY`
+  is now read only on a host with no Console configured at all.
+- **`HttpSpeech` / `HttpTranscription`** — can take their key from Console too,
+  via `LOBBY_TTS_AUTH_FROM_CONSOLE` / `LOBBY_STT_AUTH_FROM_CONSOLE`. Opt-in, not
+  automatic: those endpoints' URLs are free-form configuration, so nothing can
+  check that a Console-held key belongs to the vendor a URL points at.
+- **Usage reporting** — identifiers, token counts, latency and an outcome, posted
+  fire-and-forget to `/ai/usage`. Never the visitor's words, never the reply.
+- **`server-php/tools/check-console-ai.php`** — a server-side check that answers
+  "is reception actually wired up" without a portal login, and prints no secret.
+- **`console-react-app`**, same branch name:
+  `server-php/database/migrations/035_lobby_ai_registry.sql` registers
+  `lobby.aicountly.com` and its three modules. Without it there is nothing in
+  Console to bind a Lobby key to.
+
+### What was verified, and how
+
+- 35/35 backend tests, including: Console wins over the env key; a silent
+  Console does not fall back under the default; `auto` does and says so; a
+  wrong-provider binding fails closed; the endpoint and auth header follow what
+  Console recorded; a usage event carries no content and no key; the operator
+  report names the binding and serialises no secret.
+- The **resolve path over real HTTP**, against a stand-in serving exactly what
+  `AiCredentialController::resolve()` returns. The request that went out was
+  `GET /api/ai/credentials/resolve?domain=lobby.aicountly.com&module=reception`
+  with `Authorization: Bearer …`, and the credential arrived with
+  `source: console, model: claude-opus-5`. A usage event was posted and
+  inspected on the receiving end.
+- Migration 035 applied to a throwaway Postgres on top of 030/031/032, then
+  re-applied — clean and idempotent both times. With a credential and binding
+  inserted, Console's own `resolveModuleBindings` query returned
+  `anthropic / https://api.anthropic.com/v1 / header_key / x-api-key /
+  claude-opus-5`, which is the shape the client reads.
+- The WHM block in [CONSOLE-AI.md](CONSOLE-AI.md) was run twice in a sandboxed
+  copy of the document root: it wrote the `.env`, generated the session secret,
+  created `knowledge.json` and the state directory with `600`/`640`/`750`, and
+  on the second run changed nothing — a different service key typed at the
+  prompt did not overwrite the stored one.
+
+### What was not verified
+
+- **No call has been made to Anthropic with a real Console-brokered key**, because
+  no key is bound yet. Everything up to the outbound request is proved; the
+  request itself is not.
+- Nothing was merged and nothing was deployed, in either repository.

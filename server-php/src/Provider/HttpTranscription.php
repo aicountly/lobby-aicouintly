@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Aicountly\Api\Provider;
 
+use Aicountly\Api\Ai\ConsoleCredentials;
 use Aicountly\Api\Env;
 use Aicountly\Api\Http;
 use Aicountly\Api\Json;
@@ -42,14 +43,27 @@ final class HttpTranscription implements TranscriptionProvider
 
     public function configured(): bool
     {
-        return Env::get('LOBBY_STT_URL') !== '';
+        if (Env::get('LOBBY_STT_URL') === '') {
+            return false;
+        }
+
+        // See the same note in HttpSpeech: an unbound opt-in is a
+        // misconfiguration to report, not a request to send without auth.
+        return !self::brokered() || ConsoleCredentials::brokeredAuth(ConsoleCredentials::MODULE_TRANSCRIPTION) !== null;
     }
 
     public function unconfiguredReason(): string
     {
-        return $this->configured()
-            ? ''
-            : 'LOBBY_STT_URL is not set. No server-side transcription is configured, so voice input uses the browser speech engine where one exists.';
+        if ($this->configured()) {
+            return '';
+        }
+        if (Env::get('LOBBY_STT_URL') === '') {
+            return 'LOBBY_STT_URL is not set. No server-side transcription is configured, so voice input uses the browser speech engine where one exists.';
+        }
+
+        return 'LOBBY_STT_AUTH_FROM_CONSOLE is on, but Console returned no credential for the "'
+            . ConsoleCredentials::MODULE_TRANSCRIPTION . '" module under ' . ConsoleCredentials::domain()
+            . '. Bind one there, or set LOBBY_STT_AUTH_VALUE and turn the switch off.';
     }
 
     public function transcribe(string $audio, string $contentType, string $filename): array
@@ -93,10 +107,9 @@ final class HttpTranscription implements TranscriptionProvider
             ->timeouts(5, (int) Env::get('LOBBY_STT_TIMEOUT_SECONDS', '30'))
             ->maxResponseBytes(256 * 1024);
 
-        $authHeader = Env::get('LOBBY_STT_AUTH_HEADER');
-        $authValue = Env::get('LOBBY_STT_AUTH_VALUE');
-        if ($authHeader !== '' && $authValue !== '') {
-            $request = $request->header($authHeader, $authValue);
+        $auth = self::auth();
+        if ($auth !== null) {
+            $request = $request->header($auth['name'], $auth['value']);
         }
 
         $response = $request->send('POST', $body);
@@ -136,5 +149,38 @@ final class HttpTranscription implements TranscriptionProvider
         }
 
         return ['ok' => true, 'text' => $transcript, 'error' => '', 'retryable' => false];
+    }
+
+    /**
+     * How this endpoint is authenticated.
+     *
+     * Console when LOBBY_STT_AUTH_FROM_CONSOLE is on, so the key rotates in one
+     * place like every other provider key in the fleet. Otherwise the pair in
+     * this product's .env, which is how a transcription vendor that Console does not
+     * carry is configured.
+     *
+     * Opt-in rather than Console-first on purpose. The URL here is free-form
+     * configuration, so nothing can check that a Console-held key belongs to
+     * the vendor that URL points at — and a key sent to the wrong vendor is a
+     * disclosed key. The operator says which one they mean.
+     *
+     * @return array{name: string, value: string}|null
+     */
+    private static function auth(): ?array
+    {
+        if (self::brokered()) {
+            return ConsoleCredentials::brokeredAuth(ConsoleCredentials::MODULE_TRANSCRIPTION);
+        }
+
+        $header = Env::get('LOBBY_STT_AUTH_HEADER');
+        $value = Env::get('LOBBY_STT_AUTH_VALUE');
+
+        return ($header !== '' && $value !== '') ? ['name' => $header, 'value' => $value] : null;
+    }
+
+    private static function brokered(): bool
+    {
+        return ConsoleCredentials::isConfigured()
+            && in_array(strtolower(Env::get('LOBBY_STT_AUTH_FROM_CONSOLE')), ['1', 'true', 'yes', 'on'], true);
     }
 }

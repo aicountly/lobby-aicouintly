@@ -31,6 +31,7 @@ require __DIR__ . '/src/Json.php';
 require __DIR__ . '/src/RateLimit.php';
 require __DIR__ . '/src/VisitorSession.php';
 require __DIR__ . '/src/Knowledge.php';
+require __DIR__ . '/src/Ai/ConsoleCredentials.php';
 require __DIR__ . '/src/Provider/Contracts.php';
 require __DIR__ . '/src/Provider/AnthropicConversation.php';
 require __DIR__ . '/src/Provider/HttpSpeech.php';

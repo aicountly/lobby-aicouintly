@@ -19,6 +19,8 @@ declare(strict_types=1);
 
 namespace Aicountly\Api;
 
+use Aicountly\Api\Ai\ConsoleCredentials;
+use Aicountly\Api\Provider\AnthropicConversation;
 use Aicountly\Api\Provider\ConversationProvider;
 use Aicountly\Api\Provider\HttpSpeech;
 use Aicountly\Api\Provider\HttpTranscription;
@@ -30,6 +32,7 @@ require __DIR__ . '/../src/Json.php';
 require __DIR__ . '/../src/RateLimit.php';
 require __DIR__ . '/../src/VisitorSession.php';
 require __DIR__ . '/../src/Knowledge.php';
+require __DIR__ . '/../src/Ai/ConsoleCredentials.php';
 require __DIR__ . '/../src/Provider/Contracts.php';
 require __DIR__ . '/../src/Provider/AnthropicConversation.php';
 require __DIR__ . '/../src/Provider/HttpSpeech.php';
@@ -470,6 +473,275 @@ test('a forwarded address is only believed from a trusted proxy', function () {
     });
     withEnv(['TRUSTED_PROXY_IPS' => '10.0.0.5'], function () {
         same('203.0.113.9', RateLimit::clientIp(), 'a trusted proxy is believed');
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// Console-brokered credentials
+//
+// Nothing here reaches Console. The point is the behaviour this product owns:
+// which source wins, what it refuses to send, and what it never reports.
+// ---------------------------------------------------------------------------
+
+/** A resolved credential of the shape Console's resolve endpoint returns. */
+function consoleCredential(array $overrides = []): array
+{
+    return $overrides + [
+        'api_key' => 'sk-console-not-a-real-key',
+        'model' => 'claude-opus-5',
+        'provider' => 'anthropic',
+        'source' => 'console',
+        'base_url' => 'https://api.anthropic.com/v1',
+        'auth_method' => 'header_key',
+        'auth_header' => 'x-api-key',
+        'max_tokens' => null,
+        'ids' => [
+            'domain_id' => 21,
+            'module_id' => 42,
+            'provider_id' => 3,
+            'model_id' => 7,
+            'credential_id' => 99,
+        ],
+    ];
+}
+
+/** Console pointed somewhere that refuses instantly, with its log kept quiet. */
+function withConsole(array $extra, callable $fn): void
+{
+    $log = ini_get('error_log');
+    ini_set('error_log', sys_get_temp_dir() . '/lobby-test-error.log');
+    ConsoleCredentials::overrideForTesting(null);
+    try {
+        withEnv($extra + [
+            'CONSOLE_API_URL' => 'http://127.0.0.1:1',
+            'CONSOLE_SERVICE_KEY' => 'service-key-not-a-real-one',
+            'CONSOLE_AI_DOMAIN' => 'lobby.test',
+        ], $fn);
+    } finally {
+        ConsoleCredentials::overrideForTesting(null);
+        ini_set('error_log', $log === false ? '' : (string) $log);
+    }
+}
+
+test('Console is the source of record for the reception key', function () {
+    withConsole(['LOBBY_AI_API_KEY' => 'env-key-should-lose', 'LOBBY_AI_MODEL' => 'env-model-should-lose'], function () {
+        ConsoleCredentials::overrideForTesting(consoleCredential());
+
+        $conversation = new AnthropicConversation();
+        ok($conversation->configured(), 'a Console binding configures the conversation');
+        same('console', $conversation->source(), 'and it is reported as coming from Console');
+        same('claude-opus-5', $conversation->model(), "Console's model wins over LOBBY_AI_MODEL");
+    });
+});
+
+test('with Console configured but silent, the env key is not a failover', function () {
+    withConsole([
+        'LOBBY_AI_API_KEY' => 'env-key-should-not-be-used',
+        'AI_CREDENTIALS_SOURCE' => null,
+    ], function () {
+        // No override: the resolve call runs and fails against a closed port.
+        $conversation = new AnthropicConversation();
+        ok(!$conversation->configured(), 'an unreachable Console means unavailable, not a second key');
+        same('none', $conversation->source(), 'and no credential source is claimed');
+        ok(
+            str_contains($conversation->unconfiguredReason(), 'Console'),
+            'the operator is told it is Console that did not answer',
+        );
+    });
+});
+
+test('AI_CREDENTIALS_SOURCE=auto opts back into the .env fallback', function () {
+    withConsole([
+        'LOBBY_AI_API_KEY' => 'env-key-deliberately-allowed',
+        'AI_CREDENTIALS_SOURCE' => 'auto',
+    ], function () {
+        $conversation = new AnthropicConversation();
+        ok($conversation->configured(), 'auto falls back when Console cannot answer');
+        same('env', $conversation->source(), 'and reports the fallback rather than claiming Console');
+    });
+});
+
+test('a silent Console is asked once, not once per question', function () {
+    withConsole(['AI_CREDENTIALS_SOURCE' => null], function () {
+        same(null, ConsoleCredentials::resolve(), 'a Console that cannot be reached resolves to nothing');
+
+        $memo = new \ReflectionProperty(ConsoleCredentials::class, 'memo');
+        $entries = $memo->getValue();
+        $key = ConsoleCredentials::domain() . '|' . ConsoleCredentials::MODULE_RECEPTION;
+
+        ok(array_key_exists($key, $entries), 'the failure is remembered rather than retried on every ask');
+        same(null, $entries[$key]['value'], 'and remembered as a failure, not as a credential');
+        ok($entries[$key]['expires'] > time(), 'for a window that has not passed yet');
+        ok($entries[$key]['expires'] <= time() + 30, 'and a short one, so a recovered Console is seen quickly');
+    });
+});
+
+test('a Console binding for another provider is refused, not sent to Anthropic', function () {
+    withConsole([], function () {
+        ConsoleCredentials::overrideForTesting(consoleCredential([
+            'provider' => 'google',
+            'base_url' => 'https://generativelanguage.googleapis.com/v1beta',
+            'auth_header' => 'x-goog-api-key',
+        ]));
+
+        $conversation = new AnthropicConversation();
+        ok(!$conversation->configured(), 'a Google key must never be posted to the Anthropic endpoint');
+
+        $reason = $conversation->unconfiguredReason();
+        ok(str_contains($reason, 'google'), 'and the operator is told which provider Console actually returned');
+        ok(!str_contains($reason, 'did not return'), 'rather than being told Console was silent, which it was not');
+    });
+});
+
+test('a wrong-provider binding does not silently reach for the env key either', function () {
+    withConsole(['LOBBY_AI_API_KEY' => 'env-key-should-not-be-used', 'AI_CREDENTIALS_SOURCE' => null], function () {
+        ConsoleCredentials::overrideForTesting(consoleCredential(['provider' => 'google']));
+
+        $conversation = new AnthropicConversation();
+        ok(!$conversation->configured(), 'the default fails closed on a mis-bound provider');
+    });
+});
+
+test('with no Console at all, the local development key still works', function () {
+    withEnv([
+        'CONSOLE_API_URL' => null,
+        'CONSOLE_SERVICE_KEY' => null,
+        'LOBBY_AI_API_KEY' => 'local-dev-key',
+    ], function () {
+        $conversation = new AnthropicConversation();
+        ok($conversation->configured(), 'a developer without Console can still run reception');
+        same('env', $conversation->source(), 'and it is reported honestly as the env key');
+    });
+});
+
+test('the endpoint and auth header follow what Console recorded', function () {
+    $conversation = new AnthropicConversation();
+    $endpoint = new \ReflectionMethod($conversation, 'endpoint');
+    $auth = new \ReflectionMethod($conversation, 'authHeader');
+    $cap = new \ReflectionMethod($conversation, 'maxTokens');
+
+    same(
+        'https://api.anthropic.com/v1/messages',
+        $endpoint->invoke($conversation, consoleCredential()),
+        "Console's base URL is where the request goes",
+    );
+    same(
+        'https://api.anthropic.com/v1/messages',
+        $endpoint->invoke($conversation, consoleCredential(['base_url' => 'http://api.anthropic.com/v1'])),
+        'a plaintext base URL is refused and the pinned https endpoint used instead',
+    );
+    same(
+        ['x-api-key' => 'sk-console-not-a-real-key'],
+        $auth->invoke($conversation, consoleCredential()),
+        'header_key puts the key in the named header',
+    );
+    same(
+        ['authorization' => 'Bearer sk-console-not-a-real-key'],
+        $auth->invoke($conversation, consoleCredential(['auth_method' => 'bearer', 'auth_header' => null])),
+        'bearer puts it in Authorization',
+    );
+    same(
+        4096,
+        $cap->invoke($conversation, consoleCredential(['max_tokens' => 200000])),
+        'a Console binding is clamped to the front-desk ceiling, not honoured outright',
+    );
+    same(
+        512,
+        $cap->invoke($conversation, consoleCredential(['max_tokens' => 512])),
+        'but it can lower it',
+    );
+});
+
+test('usage reported to Console carries counts, never the conversation', function () {
+    $event = ConsoleCredentials::usageEvent(
+        consoleCredential(),
+        'success',
+        null,
+        812,
+        ['inputTokens' => 310, 'outputTokens' => 64],
+    );
+
+    same(99, $event['credential_id'], 'the credential is identified by id');
+    same(374, $event['total_tokens'], 'tokens are summed');
+    same(812, $event['latency_ms'], 'latency is reported');
+
+    $encoded = (string) json_encode($event);
+    ok(!str_contains($encoded, 'sk-console'), 'the key is never in a usage event');
+    ok(!str_contains($encoded, 'api_key'), 'nor is the field');
+    foreach (['message', 'reply', 'transcript', 'text', 'actor_uuid'] as $forbidden) {
+        ok(!array_key_exists($forbidden, $event), "no {$forbidden} field goes to Console");
+    }
+});
+
+test('the operator report names the Console binding and carries no secret', function () use ($SECRET) {
+    withConsole(['LOBBY_SESSION_SECRET' => $SECRET], function () {
+        ConsoleCredentials::overrideForTesting(consoleCredential());
+
+        $operator = Capabilities::report(true);
+        $public = Capabilities::report(false);
+
+        same('console', $operator['credentials']['source'], 'the operator sees where the key came from');
+        same('lobby.test', $operator['credentials']['console']['domain'], 'and which Console domain to look under');
+        same('reception', $operator['credentials']['console']['module'], 'and which module');
+
+        ok(!array_key_exists('credentials', $public), 'a visitor is told none of it');
+
+        foreach ([json_encode($operator), json_encode($public)] as $encoded) {
+            ok(!str_contains((string) $encoded, 'sk-console'), 'no provider key is ever serialised');
+            ok(!str_contains((string) $encoded, 'service-key-not-a-real-one'), 'nor the Console service key');
+        }
+    });
+});
+
+test('a brokered speech key is only used when the operator opts in', function () {
+    withConsole(['LOBBY_TTS_AUTH_HEADER' => 'Authorization', 'LOBBY_TTS_AUTH_VALUE' => 'Bearer env-voice-key'], function () {
+        ConsoleCredentials::overrideForTesting(
+            consoleCredential(['auth_method' => 'bearer', 'auth_header' => null]),
+            ConsoleCredentials::MODULE_SPEECH,
+        );
+
+        $auth = new \ReflectionMethod(HttpSpeech::class, 'auth');
+
+        withEnv(['LOBBY_TTS_AUTH_FROM_CONSOLE' => null], function () use ($auth) {
+            same(
+                ['name' => 'Authorization', 'value' => 'Bearer env-voice-key'],
+                $auth->invoke(null),
+                'without the opt-in the .env pair is used, so no key reaches the wrong vendor',
+            );
+        });
+
+        withEnv(['LOBBY_TTS_AUTH_FROM_CONSOLE' => 'true'], function () use ($auth) {
+            same(
+                ['name' => 'authorization', 'value' => 'Bearer sk-console-not-a-real-key'],
+                $auth->invoke(null),
+                'with the opt-in the key comes from Console',
+            );
+        });
+    });
+});
+
+test('an unbound Console opt-in reports not configured, not unauthenticated', function () {
+    withConsole([
+        'LOBBY_TTS_URL' => 'https://voice.example/synthesise',
+        'LOBBY_TTS_BODY_TEMPLATE' => '{"text":"{{text}}"}',
+        'LOBBY_TTS_AUTH_VALUE' => null,
+        'LOBBY_TTS_AUTH_HEADER' => null,
+    ], function () {
+        // Nothing bound for text_to_speech: the resolve fails against a closed port.
+        withEnv(['LOBBY_TTS_AUTH_FROM_CONSOLE' => 'true'], function () {
+            $speech = new HttpSpeech();
+            ok(!$speech->configured(), 'an unbound opt-in must not send the request without auth');
+            ok(
+                str_contains($speech->unconfiguredReason(), 'LOBBY_TTS_AUTH_FROM_CONSOLE'),
+                'and the operator is told which switch is the problem',
+            );
+        });
+
+        withEnv(['LOBBY_TTS_AUTH_FROM_CONSOLE' => null], function () {
+            $speech = new HttpSpeech();
+            ok($speech->configured(), 'an endpoint that needs no auth at all is still configured');
+        });
     });
 });
 

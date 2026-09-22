@@ -187,9 +187,14 @@ export function describeIntegrations(): IntegrationStatus[] {
       connected: report?.conversation.configured ?? false,
       detail:
         report?.conversation.configured === true
-          ? 'Answering through this product’s own API. The model credential is server-side only.'
+          ? 'Answering through this product’s own API. The model credential is held by Aicountly Console and never reaches the browser.'
+          // The fallback is only used when the capability report could not be
+          // fetched at all. It names no variable: this string ships in the
+          // browser bundle, where a list of a server’s configuration gaps is
+          // free reconnaissance, and the server’s own reason is the accurate
+          // one when there is one.
           : (report?.conversation.reason ??
-            'Not connected. The model credential is server-side only; set LOBBY_AI_API_KEY and LOBBY_SESSION_SECRET in the API .env.'),
+            'Not connected. The model credential is governed by Aicountly Console and is server-side only.'),
     },
     {
       name: 'Approved business knowledge',
