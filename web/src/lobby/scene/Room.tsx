@@ -6,6 +6,10 @@
  * shows finished surfaces the whole way round — including behind the visitor as
  * they come in, which is the glazed south elevation rather than a void.
  */
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { BoxGeometry, Matrix4 } from 'three'
+import type { InstancedMesh } from 'three'
+
 import { CEILING_PANELS, ENTRANCE, FEATURE_WALL, MEETING_ENTRANCE, ROOM } from '../layout'
 import { getMaterials } from './materials'
 import { Box, Panel } from './primitives'
@@ -73,38 +77,42 @@ function Ceiling() {
   )
 }
 
+/**
+ * Ceiling lighting.
+ *
+ * Phase 1 put four broad glowing rectangles up there, and from the entrance
+ * they were the brightest, largest thing in frame — the room read as a lit
+ * ceiling with an office underneath. These are slim linear fittings recessed
+ * into a plaster slot instead: the same positions, a tenth of the visible area.
+ * The illumination is unchanged because it never came from the emissive surface
+ * in the first place — it comes from the point lights in Lighting.tsx.
+ */
 function LightCoffers() {
   const m = getMaterials()
+  const SLOT_DEPTH = 0.12
+  const SLOT_RECESS = 0.07
+
   return (
     <group>
       {CEILING_PANELS.map((c) => (
         <group key={`${c.x}:${c.z}`}>
-          {/* A shallow reveal, not a beam: the frame sits almost flush with
-              the soffit and the lit panel is recessed inside it. */}
+          {/* The plaster slot the fitting sits in, so the ceiling reads as
+              modelled rather than as a sticker. */}
           <Box
-            size={[c.width + 0.18, 0.07, c.depth + 0.18]}
-            position={[c.x, H - 0.035, c.z]}
+            size={[c.width + 0.06, SLOT_RECESS, SLOT_DEPTH + 0.06]}
+            position={[c.x, H - SLOT_RECESS / 2, c.z]}
             material={m.ceilingReveal}
             castShadow={false}
           />
           <Box
-            size={[c.width, 0.04, c.depth]}
-            position={[c.x, H - 0.075, c.z]}
+            size={[c.width, 0.018, SLOT_DEPTH]}
+            position={[c.x, H - SLOT_RECESS, c.z]}
             material={m.lightPanel}
             castShadow={false}
             receiveShadow={false}
           />
         </group>
       ))}
-
-      {/* A single emerald reveal over the reception counter. Restraint is the point. */}
-      <Box
-        size={[6.4, 0.05, 0.05]}
-        position={[0, H - 0.13, -4.7]}
-        material={m.emeraldGlow}
-        castShadow={false}
-        receiveShadow={false}
-      />
     </group>
   )
 }
@@ -391,6 +399,28 @@ function FeatureWall() {
   const { z, halfWidth, height, slatCount } = FEATURE_WALL
   const pitch = (halfWidth * 2) / slatCount
 
+  // One instanced draw call for the whole slat wall instead of 28 meshes. The
+  // slats are identical apart from their x position, which is exactly what
+  // instancing is for, and it is the single biggest draw-call saving in the room.
+  const slats = useRef<InstancedMesh>(null)
+  const slatGeometry = useMemo(
+    () => new BoxGeometry(pitch * 0.42, height, 0.075),
+    [pitch, height],
+  )
+  useEffect(() => () => slatGeometry.dispose(), [slatGeometry])
+
+  useLayoutEffect(() => {
+    const mesh = slats.current
+    if (!mesh) return
+    const matrix = new Matrix4()
+    for (let i = 0; i < slatCount; i += 1) {
+      matrix.makeTranslation(-halfWidth + pitch * (i + 0.5), height / 2, z + 0.04)
+      mesh.setMatrixAt(i, matrix)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.computeBoundingSphere()
+  }, [slatCount, halfWidth, pitch, height, z])
+
   return (
     <group>
       <Box
@@ -398,27 +428,16 @@ function FeatureWall() {
         position={[0, height / 2, z - 0.03]}
         material={m.oakDeepPanel}
       />
-      {Array.from({ length: slatCount }, (_, i) => {
-        const x = -halfWidth + pitch * (i + 0.5)
-        return (
-          <Box
-            key={i}
-            size={[pitch * 0.45, height, 0.08]}
-            position={[x, height / 2, z + 0.04]}
-            material={i % 2 === 0 ? m.oak : m.oakLight}
-          />
-        )
-      })}
+      <instancedMesh
+        ref={slats}
+        args={[slatGeometry, m.oak, slatCount]}
+        castShadow
+        receiveShadow
+      />
     </group>
   )
 }
 
-/**
- * What the entrance glazing looks out on.
- *
- * A lit forecourt and a bright backdrop, so the doors show daylight instead of
- * the empty black outside the room.
- */
 function Outside() {
   const m = getMaterials()
   return (

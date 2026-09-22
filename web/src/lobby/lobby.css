@@ -83,6 +83,7 @@
   top: 0;
   left: 0;
   right: 0;
+  padding-top: max(0.9rem, env(safe-area-inset-top));
   align-items: flex-start;
   justify-content: space-between;
   /* Clears the cross-product app launcher, which is fixed at top-left. */
@@ -123,7 +124,8 @@
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 0 0.9rem 0.9rem;
+  padding: 0 max(0.9rem, env(safe-area-inset-right)) max(0.9rem, env(safe-area-inset-bottom))
+    max(0.9rem, env(safe-area-inset-left));
   align-items: flex-end;
   justify-content: space-between;
 }
@@ -158,7 +160,8 @@
   border-radius: 10px;
   background: var(--lobby-panel-solid);
   color: var(--lobby-ink);
-  padding: 0.5rem 0.9rem;
+  min-height: 44px;
+  padding: 0.55rem 0.95rem;
   font: inherit;
   font-size: 0.88rem;
   font-weight: 550;
@@ -177,9 +180,13 @@
   transform: translateY(1px);
 }
 
-.lobby-button:focus-visible {
-  outline: 2px solid var(--lobby-emerald);
-  outline-offset: 2px;
+.lobby-button:focus-visible,
+.lobby-select:focus-visible,
+.lobby-slot:focus-visible,
+.lobby-pad-button:focus-visible,
+.lobby-chip:focus-visible {
+  outline: 3px solid #136cce;
+  outline-offset: 3px;
 }
 
 .lobby-button[disabled] {
@@ -199,8 +206,9 @@
 }
 
 .lobby-button-quiet {
-  padding: 0.38rem 0.7rem;
-  font-size: 0.83rem;
+  min-height: 44px;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
   box-shadow: none;
 }
 
@@ -210,8 +218,8 @@
   border-radius: 8px;
   background: transparent;
   color: var(--lobby-ink-muted);
-  width: 2rem;
-  height: 2rem;
+  min-width: 44px;
+  min-height: 44px;
   font: inherit;
   cursor: pointer;
   line-height: 1;
@@ -257,8 +265,10 @@
 
 .lobby-pad-button {
   appearance: none;
-  width: 3rem;
-  height: 2.6rem;
+  width: 3.1rem;
+  height: 2.9rem;
+  min-width: 44px;
+  min-height: 44px;
   border: 1px solid var(--lobby-line);
   border-radius: 9px;
   background: var(--lobby-panel-solid);
@@ -873,5 +883,68 @@
   .lobby-service-card,
   .lobby-hint {
     transition: none;
+  }
+}
+
+/* --- graphics quality selector --------------------------------------------- */
+
+.lobby-quality {
+  display: inline-flex;
+}
+
+.lobby-select {
+  appearance: none;
+  min-height: 44px;
+  padding: 0.55rem 2rem 0.55rem 0.95rem;
+  border: 1px solid var(--lobby-line);
+  border-radius: 10px;
+  background-color: var(--lobby-panel-solid);
+  /* A chevron drawn inline, so the control needs no icon asset. */
+  background-image: linear-gradient(45deg, transparent 50%, var(--lobby-ink-muted) 50%),
+    linear-gradient(135deg, var(--lobby-ink-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.05rem) 1.25rem,
+    calc(100% - 0.75rem) 1.25rem;
+  background-size: 0.3rem 0.3rem, 0.3rem 0.3rem;
+  background-repeat: no-repeat;
+  color: var(--lobby-ink);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 550;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(20, 24, 28, 0.12);
+}
+
+.lobby-select:hover {
+  border-color: rgba(35, 40, 44, 0.3);
+}
+
+/* --- surface loading status ------------------------------------------------ */
+
+.lobby-surface-status {
+  position: absolute;
+  z-index: 10;
+  left: 50%;
+  top: 5.4rem;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.4rem 0.85rem;
+  max-width: min(30rem, calc(100vw - 2rem));
+  border-radius: 999px;
+  background: rgba(23, 26, 29, 0.62);
+  color: #f2ece1;
+  font-size: 0.78rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+.lobby-surface-status.is-warning {
+  background: rgba(122, 78, 20, 0.88);
+}
+
+@media (max-width: 40rem) {
+  .lobby-surface-status {
+    top: 4.6rem;
+    font-size: 0.72rem;
   }
 }

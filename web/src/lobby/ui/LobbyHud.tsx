@@ -10,6 +10,9 @@ import type { ReactNode } from 'react'
 import { WAYPOINTS } from '../layout'
 import { LOBBY_DISPLAY_NAME } from '../lobbyConfig'
 import type { NavigationController, NavigationSnapshot } from '../navigation/controller'
+import { QUALITY_LABELS, QUALITY_ORDER } from '../quality'
+import type { LobbyQuality } from '../quality'
+import type { TextureLoadReport } from '../scene/textureSet'
 import { MoveControls } from './MoveControls'
 
 interface Props {
@@ -17,6 +20,10 @@ interface Props {
   onOpenServices: () => void
   onStandardView: () => void
   reducedMotion: boolean
+  quality: LobbyQuality
+  onQualityChange: (quality: LobbyQuality) => void
+  /** null until the generated surface textures have settled. */
+  textureReport: TextureLoadReport | null
   /** Host controls, rendered after the lobby's own. */
   actions?: ReactNode
 }
@@ -26,6 +33,9 @@ export function LobbyHud({
   onOpenServices,
   onStandardView,
   reducedMotion,
+  quality,
+  onQualityChange,
+  textureReport,
   actions,
 }: Props) {
   const [snapshot, setSnapshot] = useState<NavigationSnapshot>({
@@ -53,6 +63,20 @@ export function LobbyHud({
           <button type="button" className="lobby-button" onClick={onStandardView}>
             Standard View
           </button>
+          <label className="lobby-quality">
+            <span className="lobby-visually-hidden">Graphics quality</span>
+            <select
+              className="lobby-select"
+              value={quality}
+              onChange={(event) => onQualityChange(event.target.value as LobbyQuality)}
+            >
+              {QUALITY_ORDER.map((option) => (
+                <option key={option} value={option}>
+                  {QUALITY_LABELS[option]} graphics
+                </option>
+              ))}
+            </select>
+          </label>
           {actions}
         </div>
       </div>
@@ -84,6 +108,8 @@ export function LobbyHud({
         <MoveControls controller={controller} />
       </div>
 
+      <SurfaceStatus report={textureReport} />
+
       <p className={`lobby-hint${snapshot.hasFocus ? ' is-dim' : ''}`} data-lobby-ui>
         <span className="lobby-hint-desktop">
           Drag to look around · W A S D or arrow keys to walk · Q and E to turn
@@ -104,5 +130,32 @@ export function LobbyHud({
         </p>
       ) : null}
     </>
+  )
+}
+
+/**
+ * Honest reporting on the generated surface textures.
+ *
+ * The room is navigable before any of them land — materials start as flat
+ * colours — so this is a status line, not a loading gate. If a texture fails it
+ * says so rather than leaving the visitor to wonder why one surface looks
+ * plainer than the rest.
+ */
+function SurfaceStatus({ report }: { report: TextureLoadReport | null }) {
+  if (!report) {
+    return (
+      <p className="lobby-surface-status" role="status" data-lobby-ui>
+        Loading surfaces…
+      </p>
+    )
+  }
+
+  if (report.failures.length === 0) return null
+
+  return (
+    <p className="lobby-surface-status is-warning" role="status" data-lobby-ui>
+      {report.failures.length} of {report.requested} surface textures did not load. The room is
+      usable; those surfaces show flat colour.
+    </p>
   )
 }

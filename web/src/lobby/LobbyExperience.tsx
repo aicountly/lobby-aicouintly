@@ -18,6 +18,10 @@ import { LobbyCanvas } from './scene/LobbyCanvas'
 import { useLobbyAssets } from './assets/useLobbyAssets'
 import { getLobbyServices } from './services/registry'
 import { useReducedMotion } from './useReducedMotion'
+import { detectInitialQuality, rememberQuality } from './quality'
+import type { LobbyQuality } from './quality'
+import { releaseSceneResources } from './scene/resources'
+import type { TextureLoadReport } from './scene/textureSet'
 import { detectWebglSupport } from './webgl'
 import { SceneErrorBoundary } from './ui/ErrorBoundary'
 import { LobbyHud } from './ui/LobbyHud'
@@ -48,8 +52,21 @@ export function LobbyExperience({ children, actions }: Props) {
     supported ? null : 'This browser cannot run WebGL, so the 3D lobby is unavailable here.',
   )
   const [servicesOpen, setServicesOpen] = useState(false)
+  const [quality, setQuality] = useState<LobbyQuality>(detectInitialQuality)
+  const [textureReport, setTextureReport] = useState<TextureLoadReport | null>(null)
 
   const sceneRef = useRef<HTMLDivElement>(null)
+
+  const chooseQuality = useCallback((next: LobbyQuality) => {
+    setQuality(next)
+    rememberQuality(next)
+  }, [])
+
+  // Textures, materials, geometry caches and the environment map are shared for
+  // the lifetime of the page rather than the canvas, so that toggling Standard
+  // View does not re-decode 2 MB of PNG. They are released once, here, when the
+  // lobby itself goes away.
+  useEffect(() => releaseSceneResources, [])
 
   useEffect(() => {
     const element = sceneRef.current
@@ -120,12 +137,17 @@ export function LobbyExperience({ children, actions }: Props) {
             controller={controller}
             assets={assets}
             reducedMotion={reducedMotion}
+            quality={quality}
             onOpenServices={() => setServicesOpen(true)}
             onContextLost={onContextLost}
+            onTexturesSettled={setTextureReport}
           />
           <LobbyHud
             controller={controller}
             reducedMotion={reducedMotion}
+            quality={quality}
+            onQualityChange={chooseQuality}
+            textureReport={textureReport}
             actions={actions}
             onOpenServices={() => setServicesOpen(true)}
             onStandardView={() => {

@@ -122,3 +122,72 @@ export const DEFAULT_ASSETS: LobbyAssets = {
 }
 
 export const ASSET_SLOT_IDS = Object.keys(DEFAULT_ASSETS) as AssetSlotId[]
+
+// ---------------------------------------------------------------------------
+// Receptionist interface — the contract Phase 2B implements against
+// ---------------------------------------------------------------------------
+
+/**
+ * The four states the reception character can be in.
+ *
+ * Declared now, driven later. Phase 2A plays `idle` only; the rest exist so a
+ * character can be authored against a fixed list rather than a guess, and so a
+ * file that provides them needs no code change to be accepted.
+ *
+ * Nothing in this phase implements speech, facial animation or lip-sync — the
+ * shipped receptionist is a faceless placeholder. These names describe the
+ * interface a future animated character plugs into, not behaviour that exists.
+ */
+export type ReceptionistState = 'idle' | 'greeting' | 'listening' | 'speaking'
+
+/** Which animation role each state plays. Roles map to clip names in the manifest. */
+export const RECEPTIONIST_STATE_CLIPS: Record<ReceptionistState, ReceptionistClip> = {
+  idle: 'idle',
+  greeting: 'greet',
+  listening: 'listen',
+  speaking: 'speak',
+}
+
+/**
+ * Facial morph targets the lobby will drive, if a character supplies them.
+ *
+ * Two independent sets, because they are driven by different things: expression
+ * from the conversation state, visemes from audio. A character may ship either,
+ * both or neither — neither is the current state, and the environment loads
+ * regardless.
+ */
+export interface FacialMorphMapping {
+  /**
+   * ARKit blendshape names, 52 in total. Only the ones the lobby drives are
+   * listed; a character is expected to provide the full set.
+   * glTF morph targets need `extras.targetNames` populated or the mapping is
+   * index order and guesswork.
+   */
+  expression: Partial<Record<'browInnerUp' | 'eyeBlinkLeft' | 'eyeBlinkRight' | 'mouthSmileLeft' | 'mouthSmileRight' | 'jawOpen', string>>
+  /**
+   * Oculus/OVR viseme set, 15 shapes, applied on top of the body clip rather
+   * than baked into it. Required only for a speaking character.
+   */
+  visemes: Partial<Record<'sil' | 'PP' | 'FF' | 'TH' | 'DD' | 'kk' | 'CH' | 'SS' | 'nn' | 'RR' | 'aa' | 'E' | 'ih' | 'oh' | 'ou', string>>
+}
+
+/**
+ * The complete Phase 2B slot contract.
+ *
+ * `url: null` is the shipped state and must stay valid: a missing character
+ * asset may never prevent the environment from loading.
+ */
+export interface ReceptionistAsset {
+  url: string | null
+  transform: AssetTransform
+  /** Role -> clip name inside the glTF. */
+  animations: AnimationMapping
+  /** Optional. Absent means no facial animation, which is the current state. */
+  facial?: FacialMorphMapping
+}
+
+export const RECEPTIONIST_INTERFACE: ReceptionistAsset = {
+  url: DEFAULT_ASSETS.receptionist.url,
+  transform: DEFAULT_ASSETS.receptionist.transform,
+  animations: DEFAULT_ASSETS.receptionist.animations,
+}

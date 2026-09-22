@@ -1,79 +1,17 @@
 /**
- * The loose items: planters and the wayfinding directory by the entrance.
+ * Loose items: the planting and the wayfinding directory by the entrance.
  */
-import { DIRECTORY, PLANTERS } from '../layout'
+import { DIRECTORY } from '../layout'
+import { Planting } from './Foliage'
 import { getMaterials } from './materials'
-import { Box, Cylinder } from './primitives'
+import { ContactShadow, Cylinder, RoundedBox } from './primitives'
 import { SignPlane } from './Signage'
 
 export function Furnishings() {
   return (
     <group>
-      {PLANTERS.map((planter) => (
-        <Planter
-          key={`${planter.x}:${planter.z}`}
-          x={planter.x}
-          z={planter.z}
-          radius={planter.radius}
-          height={planter.height}
-        />
-      ))}
+      <Planting />
       <Directory />
-    </group>
-  )
-}
-
-function Planter({
-  x,
-  z,
-  radius,
-  height,
-}: {
-  x: number
-  z: number
-  radius: number
-  height: number
-}) {
-  const m = getMaterials()
-
-  // Deterministic leaf placement: the same plant on every load.
-  const leaves = Array.from({ length: 9 }, (_, i) => {
-    const angle = (i / 9) * Math.PI * 2 + (x + z)
-    const lean = 0.35 + (i % 3) * 0.16
-    const leafHeight = 0.55 + (i % 4) * 0.22
-    return { angle, lean, leafHeight }
-  })
-
-  return (
-    <group>
-      <Cylinder
-        radiusTop={radius}
-        radiusBottom={radius * 0.78}
-        height={height}
-        position={[x, height / 2, z]}
-        material={m.pot}
-      />
-      <Cylinder
-        radiusTop={radius * 0.92}
-        height={0.04}
-        position={[x, height - 0.01, z]}
-        material={m.oakDeepPanel}
-      />
-      {leaves.map((leaf, i) => (
-        <mesh
-          key={i}
-          position={[
-            x + Math.cos(leaf.angle) * radius * 0.35,
-            height + leaf.leafHeight / 2,
-            z + Math.sin(leaf.angle) * radius * 0.35,
-          ]}
-          rotation={[Math.sin(leaf.angle) * leaf.lean, leaf.angle, Math.cos(leaf.angle) * leaf.lean]}
-          material={i % 2 === 0 ? m.foliage : m.foliageDeep}
-          castShadow
-        >
-          <coneGeometry args={[radius * 0.55, leaf.leafHeight, 5, 1, true]} />
-        </mesh>
-      ))}
     </group>
   )
 }
@@ -85,33 +23,36 @@ function Directory() {
 
   return (
     <group>
-      <Cylinder radiusTop={0.26} height={0.04} position={[x, 0.02, z]} material={m.graphite} />
-      <Box size={[0.09, height, 0.09]} position={[x, height / 2, z]} material={m.graphite} />
-      <Box
-        size={[width, 0.92, depth]}
-        position={[x, height - 0.1, z]}
+      <Cylinder radiusTop={0.24} radiusBottom={0.26} height={0.03} segments={24} position={[x, 0.015, z]} material={m.graphite} />
+      <Cylinder radiusTop={0.035} height={height} segments={12} position={[x, height / 2, z]} material={m.metal} />
+      <RoundedBox
+        size={[width, 0.94, depth]}
+        radius={0.01}
+        position={[x, height - 0.08, z]}
         material={m.graphite}
       />
-      <Box
-        size={[width - 0.08, 0.84, 0.02]}
-        position={[x, height - 0.1, z + depth / 2 + 0.012]}
+      <RoundedBox
+        size={[width - 0.07, 0.86, 0.014]}
+        radius={0.004}
+        position={[x, height - 0.08, z + depth / 2 + 0.008]}
         material={m.oakDeepPanel}
       />
       <SignPlane
         text="Welcome"
         eyebrow="Aicountly"
-        size={[width - 0.12, 0.42]}
-        position={[x, height + 0.1, z + depth / 2 + 0.026]}
+        size={[width - 0.13, 0.4]}
+        position={[x, height + 0.11, z + depth / 2 + 0.018]}
         fontSize={104}
-        color="#f8f4ec"
+        color="#f6f2ea"
       />
       <SignPlane
         text="Reception · Lounge · Meetings"
-        size={[width - 0.12, 0.2]}
-        position={[x, height - 0.36, z + depth / 2 + 0.026]}
+        size={[width - 0.13, 0.19]}
+        position={[x, height - 0.35, z + depth / 2 + 0.018]}
         fontSize={54}
-        color="#cbd3d6"
+        color="#c3ccd0"
       />
+      <ContactShadow position={[x, 0.005, z]} radius={0.38} opacity={0.4} />
     </group>
   )
 }

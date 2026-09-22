@@ -2,19 +2,22 @@
  * Everything inside the Canvas, assembled.
  *
  * Each replaceable part is wrapped in <OptionalModel>, so the procedural
- * geometry underneath is the fallback rather than the design: supply art for
- * one slot and the rest of the room carries on unchanged.
+ * geometry underneath is the fallback rather than the design: supply art for one
+ * slot and the rest of the room carries on unchanged.
  */
 import { useFrame } from '@react-three/fiber'
 
 import type { LobbyAssets } from '../assets/assetConfig'
 import type { NavigationController } from '../navigation/controller'
+import type { LobbyQuality } from '../quality'
+import type { TextureLoadReport } from './textureSet'
 import { Furnishings } from './Furnishings'
 import { Lighting } from './Lighting'
 import { OptionalModel } from './OptionalModel'
 import { PlaceholderReceptionist } from './Receptionist'
 import { ReceptionDesk } from './ReceptionDesk'
 import { Room } from './Room'
+import { SceneResources } from './SceneResources'
 import { Signage } from './Signage'
 import { WaitingLounge } from './WaitingLounge'
 
@@ -22,14 +25,23 @@ interface Props {
   controller: NavigationController
   assets: LobbyAssets
   reducedMotion: boolean
-  shadows: boolean
+  quality: LobbyQuality
   onOpenServices: () => void
+  onTexturesSettled?: (report: TextureLoadReport) => void
 }
 
-export function LobbyScene({ controller, assets, reducedMotion, shadows, onOpenServices }: Props) {
+export function LobbyScene({
+  controller,
+  assets,
+  reducedMotion,
+  quality,
+  onOpenServices,
+  onTexturesSettled,
+}: Props) {
   return (
     <>
-      <Lighting shadows={shadows} />
+      <SceneResources quality={quality} onTexturesSettled={onTexturesSettled} />
+      <Lighting quality={quality} />
 
       <OptionalModel slot={assets.room} reducedMotion={reducedMotion}>
         <Room />

@@ -10,7 +10,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "textures": "node scripts/generate-lobby-textures.mjs"
   },
   "dependencies": {
     "@react-three/fiber": "^9.7.0",
