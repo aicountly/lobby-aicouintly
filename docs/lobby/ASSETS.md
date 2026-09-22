@@ -359,3 +359,136 @@ Texture scale is derived from the tile size, not guessed, so a floorboard reads
 | `PMREMGenerator` | `three` core | MIT, already a dependency |
 
 No new runtime dependency was added for this phase.
+
+---
+
+# Replacement specification (measured, Phase 2C)
+
+The character in the room is still the generated one. It is an **interim
+demonstration character** and the original goal — a realistic human — is **not
+met**. This section is what a replacement has to satisfy, written from the rig
+that is actually implemented and the cost that was actually measured, so that
+whoever supplies one is building against facts rather than an aspiration.
+
+Nothing in Phase 2C changed the character. The work went into the services
+behind it.
+
+## Format and placement
+
+| | Requirement |
+| --- | --- |
+| Format | glTF 2.0 binary (`.glb`), single file, self-contained |
+| Units | Metres, Y-up, Z-forward |
+| Origin | On the floor, between the feet |
+| Facing | +Z (towards the entrance) |
+| Height | 1.6–1.9 m. The rig it replaces is 1.78 m with eyes at 1.65 m |
+| Placement | `receptionist` slot, `manifest.json`. Default transform puts it at (1.3, 0, −6.1) facing +Z |
+
+## Animation roles
+
+Authored against roles, not state names, so adding a conversation state does not
+invalidate art. `idle` is the only one that is required; everything else falls
+back along `CLIP_FALLBACK` to `idle`.
+
+| Role | Plays for | Loop |
+| --- | --- | --- |
+| `idle` | `idle` | Loop, first and last frame identical |
+| `greet` | `greeting` | **Once**, clamped |
+| `listen` | `listening` | Loop |
+| `think` | `processing` | Loop |
+| `speak` | `speaking` | Loop |
+| `gesture` | `handover` | **Once**, clamped |
+| `apology` | `error` | Loop |
+| `seated` | optional variant | Loop |
+
+Authored at 30 fps or higher. No baked scale on any bone, no IK constraints or
+drivers (they do not survive glTF export), one skinned mesh, one skeleton,
+**≤ 80 bones**, standard humanoid naming (Mixamo or VRM) so clips retarget.
+
+Head and eye bones must be animatable separately from the body: the lobby turns
+the head to follow a visitor and leads it with the eyes. Do not bake head motion
+into `idle` beyond a breath.
+
+## Facial controls — what is actually driven
+
+The generated rig exposes **28 drivable controls**: 17 genuine morph targets on
+the head shell plus 11 driven by transform. A replacement should supply the full
+ARKit 52; these are the ones the lobby writes to today, and a character
+supplying only these is fully usable.
+
+**Mouth and jaw** (these are the 17 morph targets, and they are what lip-sync
+needs): `jawOpen`, `mouthClose`, `mouthFunnel`, `mouthPucker`,
+`mouthSmileLeft`, `mouthSmileRight`, `mouthFrownLeft`, `mouthFrownRight`,
+`mouthStretchLeft`, `mouthStretchRight`, `mouthPressLeft`, `mouthPressRight`,
+`mouthShrugUpper`, `mouthRollLower`, `mouthRollUpper`, `cheekSquintLeft`,
+`cheekSquintRight`.
+
+**Eyes and brows** (transform-driven on the generated rig, blendshapes on a
+supplied one): `eyeBlinkLeft`, `eyeBlinkRight`, `eyeSquintLeft`,
+`eyeSquintRight`, `eyeWideLeft`, `eyeWideRight`, `browInnerUp`, `browDownLeft`,
+`browDownRight`, `browOuterUpLeft`, `browOuterUpRight`.
+
+Rules that are not negotiable:
+
+- **`extras.targetNames` must be populated.** glTF does not carry morph-target
+  names in the core specification. Without them the loader reports the character
+  as having no face and drives nothing — deliberately, because guessing which
+  shape is `jawOpen` from index order produces a character that chews.
+- Neutral is all-zero. No corrective shapes that assume a blend order.
+- Visemes: the 15 OVR shapes (`viseme_aa`, …) are used directly when present.
+  **A character with only the ARKit set still gets all fifteen** — the lobby
+  supplies the mapping in `reception/visemes.ts`, so supplying viseme shapes is
+  an improvement, not a requirement.
+- Supplying **timed viseme events with the audio** is what unlocks
+  `provider-viseme`, the only mode whose timings are measured from the sound.
+
+## Measured performance budget
+
+From `npm run measure:avatar` at 1280×720, `balanced`, camera 1.95 m from the
+character — where it occupies the most screen. These are what the generated
+character costs today, and a replacement should be compared against them:
+
+| | Environment only | With the character | Character costs |
+| --- | --- | --- | --- |
+| Draw calls | 196 | 246 | **+50** |
+| Triangles | 29,450 | 40,254 | **+10,804** |
+| Geometries | 133 | 161 | **+28** |
+| Textures | 19 | 22 | **+3** |
+| Shader programs | 19 | 24 | **+5** |
+| Transferred | 2,411 KB | 2,411 KB | **0** (it is generated) |
+
+Budget for a replacement: **≤ 60k triangles**, **≤ 4 materials**, textures
+**≤ 2048²** (KTX2/Basis preferred), PBR metallic-roughness, Draco or Meshopt
+optional. A downloaded character will not be free at transfer time the way this
+one is — budget for it in the page weight.
+
+**Facial animation is not free.** Morph targets are per-frame CPU work on the
+influence array and extra GPU work sampling the morph texture; draw calls and
+triangle counts do not move, which is exactly why they are the wrong thing to
+measure it with. The measurement above compares idle against speaking on a
+software rasteriser where the difference is inside run-to-run noise, so it
+establishes that nothing structural is added — not that the cost is zero. On
+real hardware, measure it with frame timing at a fixed viewport.
+
+## Licence
+
+The `.glb` is served as a static file from a public page, so **anyone who visits
+can download it**. The licence must permit redistribution in a browser bundle.
+State it in writing before the file is committed.
+
+## Import and validation procedure
+
+1. `cd web && npm run inspect:character -- path/to/character.glb`
+   Prints what the file actually contains — clips, bones, morph-target names,
+   ARKit and viseme coverage — and ends with a verdict. Configuration claiming a
+   blendshape is not evidence that one exists; this is.
+2. Fix anything it reports before going further. Missing `extras.targetNames` is
+   the usual one.
+3. Drop the `.glb` into `web/public/lobby-assets/` and point the `receptionist`
+   slot at it in `manifest.json`. No rebuild, no restart.
+4. Reload and walk the room: the figure should stand where the generated one
+   did, and collision should still match what you see (collision comes from
+   `layout.ts`, not from the art).
+5. Open reception. The panel's last line reports what the lobby found in your
+   file and which lip-sync mode it chose.
+6. `npm run measure:avatar` and compare against the table above.

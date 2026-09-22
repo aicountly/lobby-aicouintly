@@ -94,6 +94,9 @@ export function LobbyScene({
   )
 }
 
+/** Shortest gap between two approach greetings, in seconds. */
+const GREETING_COOLDOWN_SECONDS = 45
+
 /**
  * Fires once when the visitor reaches the counter.
  *
@@ -104,6 +107,7 @@ export function LobbyScene({
  */
 function ApproachWatcher({ onApproach }: { onApproach?: () => void }) {
   const armed = useRef(true)
+  const lastGreetedAt = useRef(0)
 
   useFrame((state) => {
     if (!onApproach) return
@@ -116,6 +120,12 @@ function ApproachWatcher({ onApproach }: { onApproach?: () => void }) {
     // that counts as walking up to reception.
     if (armed.current && distance < 5) {
       armed.current = false
+      // Distance hysteresis stops a jitter at the threshold; this stops a
+      // visitor pacing the room from being greeted every few seconds, which on
+      // a metered deployment is a request each time.
+      const now = state.clock.elapsedTime
+      if (now - lastGreetedAt.current < GREETING_COOLDOWN_SECONDS && lastGreetedAt.current > 0) return
+      lastGreetedAt.current = now
       onApproach()
     } else if (!armed.current && distance > 8) {
       armed.current = true

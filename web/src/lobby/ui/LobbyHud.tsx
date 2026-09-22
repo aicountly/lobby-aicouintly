@@ -34,6 +34,8 @@ interface Props {
   reception: ConversationSnapshot
   /** Starts voice input, or opens the conversation when voice is unavailable. */
   onTalk: () => void
+  /** Starts audio the browser refused to autoplay. */
+  onPlayBlocked: () => void
   /** Turns spoken replies on or off. */
   onToggleSpeech: (enabled: boolean) => void
   /** Host controls, rendered after the lobby's own. */
@@ -51,6 +53,7 @@ export function LobbyHud({
   receptionState,
   reception,
   onTalk,
+  onPlayBlocked,
   onToggleSpeech,
   actions,
 }: Props) {
@@ -157,7 +160,7 @@ export function LobbyHud({
         <MoveControls controller={controller} />
       </div>
 
-      <ReceptionCaption snapshot={reception} />
+      <ReceptionCaption snapshot={reception} onPlayBlocked={onPlayBlocked} />
 
       <SurfaceStatus report={textureReport} />
 

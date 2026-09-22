@@ -12,7 +12,13 @@
  */
 import type { ConversationSnapshot } from '../reception/conversation'
 
-export function ReceptionCaption({ snapshot }: { snapshot: ConversationSnapshot }) {
+interface Props {
+  snapshot: ConversationSnapshot
+  /** Starts audio the browser refused to autoplay. */
+  onPlayBlocked?: () => void
+}
+
+export function ReceptionCaption({ snapshot, onPlayBlocked }: Props) {
   const speaking = snapshot.phase === 'greeting' || snapshot.phase === 'answering'
   const line = [...snapshot.turns].reverse().find((turn) => turn.role === 'reception')?.text ?? ''
 
@@ -24,14 +30,24 @@ export function ReceptionCaption({ snapshot }: { snapshot: ConversationSnapshot 
         ? line
         : ''
 
-  if (!text) return null
+  if (!text && !snapshot.playbackBlocked) return null
 
   return (
     <div className="lobby-caption" data-lobby-ui>
-      <p className={`lobby-caption-line${snapshot.voice.listening ? ' is-visitor' : ''}`}>
-        <span className="lobby-caption-who">{snapshot.voice.listening ? 'You' : 'Reception (demo)'}</span>
-        {text}
-      </p>
+      {text ? (
+        <p className={`lobby-caption-line${snapshot.voice.listening ? ' is-visitor' : ''}`}>
+          <span className="lobby-caption-who">{snapshot.voice.listening ? 'You' : 'Reception'}</span>
+          {text}
+        </p>
+      ) : null}
+
+      {/* A remembered sound preference is not permission to make noise. When
+          the browser refuses, the audio is held and offered rather than lost. */}
+      {snapshot.playbackBlocked && onPlayBlocked ? (
+        <button type="button" className="lobby-button lobby-button-primary lobby-caption-play" onClick={onPlayBlocked}>
+          Tap to hear this reply
+        </button>
+      ) : null}
     </div>
   )
 }

@@ -21,8 +21,9 @@
  * can fall through to canned data is worse than one that admits it is not
  * connected.
  */
-import { APPOINTMENTS_API_BASE_URL, RECEPTION_AI_PATH } from '../lobbyConfig'
-import { getApiBaseUrl } from '../../config'
+import { APPOINTMENTS_API_BASE_URL } from '../lobbyConfig'
+import { createReceptionApi } from './receptionApi'
+import type { ReceptionApi } from './receptionApi'
 import type {
   AvailabilitySlot,
   BookingReceipt,
@@ -63,10 +64,21 @@ function appointmentsUnavailable(): ServiceUnavailable {
   )
 }
 
-/** The request and response shape this repository defines for its own relay. */
-interface ReceptionAiResponse {
-  reply?: unknown
-  suggestions?: unknown
+/**
+ * One API client for the lifetime of the module.
+ *
+ * It holds the visitor session, so a new one per call would mint a session per
+ * message and spend the visitor's own rate limit on bookkeeping.
+ */
+let receptionApi: ReceptionApi | null = null
+
+function api(): ReceptionApi {
+  return (receptionApi ??= createReceptionApi())
+}
+
+/** Exposed so the experience can hand the same client to speech and transcription. */
+export function liveReceptionApi(): ReceptionApi {
+  return api()
 }
 
 export const liveAdapter: LobbyServiceAdapter = {
@@ -105,42 +117,30 @@ export const liveAdapter: LobbyServiceAdapter = {
     question: string,
     history: ReceptionTurn[],
   ): Promise<ServiceOutcome<ReceptionReply>> {
-    if (!RECEPTION_AI_PATH) {
-      return unavailable(
-        RECEPTION_AI,
-        'Not connected. The reception AI answers through this product’s own API so the model credential stays server-side under Aicountly Console; set VITE_LOBBY_RECEPTION_AI_PATH once that route exists.',
-      )
+    const result = await api().ask(question, history)
+
+    if (!result.ok) {
+      // Every failure path lands here and says so. There is deliberately no
+      // branch that answers from the demonstration script: a live deployment
+      // that quietly fell back to keyword matching would be presenting a
+      // demonstration to a visitor as a real model.
+      return unavailable(RECEPTION_AI, result.reason)
     }
 
-    const url = `${getApiBaseUrl()}/${RECEPTION_AI_PATH.replace(/^\//, '')}`
+    const text = result.data.reply.trim()
+    if (!text) {
+      return unavailable(RECEPTION_AI, 'Reception answered with nothing.')
+    }
 
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, history }),
-      })
-
-      if (!response.ok) {
-        return unavailable(
-          RECEPTION_AI,
-          `The reception AI relay answered ${response.status}. No reply is available.`,
-        )
-      }
-
-      const payload = (await response.json()) as ReceptionAiResponse
-      const text = typeof payload.reply === 'string' ? payload.reply.trim() : ''
-      if (!text) {
-        return unavailable(RECEPTION_AI, 'The reception AI relay returned no reply.')
-      }
-
-      const suggestions = Array.isArray(payload.suggestions)
-        ? payload.suggestions.filter((s): s is string => typeof s === 'string').slice(0, 3)
-        : []
-
-      return { status: 'ok', mode: 'live', data: { text, demo: false, suggestions } }
-    } catch {
-      return unavailable(RECEPTION_AI, 'The reception AI relay could not be reached.')
+    return {
+      status: 'ok',
+      mode: 'live',
+      data: {
+        text,
+        demo: false,
+        suggestions: result.data.suggestions,
+        actions: result.data.actions,
+      },
     }
   },
 }
@@ -159,6 +159,10 @@ export interface IntegrationStatus {
  * capability methods above are the only things allowed to claim that.
  */
 export function describeIntegrations(): IntegrationStatus[] {
+  // Whatever the last capability fetch found. Null before the first one, which
+  // renders as "not connected" — the safe reading while it is still unknown.
+  const report = api().lastCapabilities()
+
   return [
     {
       name: 'Appointments & availability',
@@ -177,10 +181,47 @@ export function describeIntegrations(): IntegrationStatus[] {
     {
       name: 'Reception AI',
       owner: RECEPTION_AI,
-      connected: Boolean(RECEPTION_AI_PATH),
-      detail: RECEPTION_AI_PATH
-        ? 'Relay path configured on this product’s own API.'
-        : 'No relay configured. Model credentials are governed by Aicountly Console and stay server-side.',
+      // Read from the deployment rather than from a build-time flag: whether a
+      // model answers is a server fact, and the server is the only thing that
+      // knows it.
+      connected: report?.conversation.configured ?? false,
+      detail:
+        report?.conversation.configured === true
+          ? 'Answering through this product’s own API. The model credential is held by Aicountly Console and never reaches the browser.'
+          // The fallback is only used when the capability report could not be
+          // fetched at all. It names no variable: this string ships in the
+          // browser bundle, where a list of a server’s configuration gaps is
+          // free reconnaissance, and the server’s own reason is the accurate
+          // one when there is one.
+          : (report?.conversation.reason ??
+            'Not connected. The model credential is governed by Aicountly Console and is server-side only.'),
+    },
+    {
+      name: 'Approved business knowledge',
+      owner: 'Aicountly Lobby',
+      connected: report?.knowledge.configured ?? false,
+      detail:
+        report?.knowledge.configured === true
+          ? `Loaded on the server: ${report.knowledge.sections.join(', ')}.`
+          : 'No approved information configured, so reception can only say what it does not know.',
+    },
+    {
+      name: 'Spoken replies',
+      owner: 'Aicountly Lobby',
+      connected: report?.speech.configured ?? false,
+      detail:
+        report?.speech.configured === true
+          ? 'Synthesised on the server and played in the browser.'
+          : 'No server voice configured. The browser’s own speech engine is used where it has one.',
+    },
+    {
+      name: 'Voice transcription',
+      owner: 'Aicountly Lobby',
+      connected: report?.transcription.configured ?? false,
+      detail:
+        report?.transcription.configured === true
+          ? 'Recordings are transcribed on the server and never stored.'
+          : 'No server transcription configured. The browser’s own recogniser is used where it has one.',
     },
     {
       name: 'Enquiries & messaging',

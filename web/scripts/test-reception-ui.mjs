@@ -291,7 +291,11 @@ try {
     'the 3D panel reports the mounted character and its lip-sync mode',
     /procedural character/i.test(sceneCapability) &&
       /facial controls/i.test(sceneCapability) &&
-      /scheduled from the reply text/i.test(sceneCapability),
+      // Named for what it is. It must not claim the timings came from a
+      // speech provider, because in this mode nothing measures the audio.
+      /lip-sync text-estimated/i.test(sceneCapability) &&
+      /nothing measures the audio/i.test(sceneCapability) &&
+      !/provider-timed/i.test(sceneCapability),
     sceneCapability,
   )
   check('the 3D view logged no errors', sceneErrors.length === 0, sceneErrors.join(' | '))

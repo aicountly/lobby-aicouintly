@@ -46,3 +46,8 @@ Thumbs.db
 # are large, regenerate from `npm run measure:avatar`, and are not reviewable in
 # a diff.
 web/measurements/*.png
+
+# Tenant reception knowledge. Lives on the server beside api/.env, is written by
+# hand once, and is excluded from every rsync so a --delete deploy leaves it
+# alone. knowledge.example.json is the tracked template.
+server-php/knowledge.json

@@ -260,14 +260,28 @@ test('native viseme shapes are recognised under both spellings', () => {
   assert.equal(bare.nativeVisemes.length, 15)
 })
 
-test('lip-sync mode prefers a schedule, falls back to an envelope, then to captions', () => {
+test('lip-sync mode is chosen by how much it actually knows about the sound', () => {
   const shaped = capability.faceCapabilityFrom(['jawOpen', 'mouthFunnel', 'mouthPucker', 'mouthSmileLeft'])
   const jawOnly = capability.faceCapabilityFrom(['jawOpen'])
   const none = capability.faceCapabilityFrom([])
-  assert.equal(capability.chooseLipSyncMode(shaped, { analyser: false, text: true }), 'timed')
-  assert.equal(capability.chooseLipSyncMode(jawOnly, { analyser: true, text: true }), 'audio')
-  assert.equal(capability.chooseLipSyncMode(jawOnly, { analyser: false, text: true }), 'none')
-  assert.equal(capability.chooseLipSyncMode(none, { analyser: true, text: true }), 'none')
+  const pick = (face, sources) => capability.chooseLipSyncMode(face, { visemeEvents: false, analyser: false, text: false, ...sources })
+
+  assert.equal(pick(shaped, { visemeEvents: true, analyser: true, text: true }), 'provider-viseme')
+  assert.equal(pick(shaped, { analyser: true, text: true }), 'audio-reactive')
+  assert.equal(pick(shaped, { text: true }), 'text-estimated')
+  assert.equal(pick(jawOnly, { analyser: true, text: true }), 'audio-reactive')
+  assert.equal(pick(jawOnly, { text: true }), 'none', 'a jaw alone cannot form shapes from text')
+  assert.equal(pick(none, { visemeEvents: true, analyser: true, text: true }), 'none')
+})
+
+test('no mode claims to be provider-timed unless a provider timed it', () => {
+  // The old name for text-estimated was "timed", which read as though the
+  // speech provider had supplied the timings. Nothing may describe it that way.
+  const described = capability.describeLipSyncMode('text-estimated')
+  assert.ok(/estimated/i.test(described), described)
+  assert.ok(/nothing measures the audio/i.test(described), described)
+  assert.ok(!/provider/i.test(described), 'text-estimated must not mention a provider')
+  assert.ok(/not phoneme-accurate/i.test(capability.describeLipSyncMode('audio-reactive')))
 })
 
 /** A duck-typed stand-in for a loaded glTF scene. */
@@ -520,9 +534,9 @@ test('a character with only an idle clip still changes state safely', () => {
 // Lip sync
 // ---------------------------------------------------------------------------
 
-test('Mode A produces a moving mouth across the line', () => {
+test('a text-estimated schedule produces a moving mouth across the line', () => {
   const sig = signalModule.createReceptionSignal()
-  sig.lipSync = 'timed'
+  sig.lipSync = 'text-estimated'
   const timeline = visemes.visemeTimeline('Welcome to Aicountly reception.')
   signalModule.beginSpeaking(sig, timeline, 1000)
   assert.deepEqual(lipSync.sampleLipSync(sig, 900), {}, 'silent before the start')
@@ -541,9 +555,9 @@ test('Mode A produces a moving mouth across the line', () => {
   assert.ok(shapes.has('jawOpen'))
 })
 
-test('Mode A stops when speaking stops', () => {
+test('a schedule stops when speaking stops', () => {
   const sig = signalModule.createReceptionSignal()
-  sig.lipSync = 'timed'
+  sig.lipSync = 'text-estimated'
   signalModule.beginSpeaking(sig, visemes.visemeTimeline('hello there'), 0)
   assert.ok(Object.keys(lipSync.sampleLipSync(sig, 120)).length > 0)
   signalModule.endSpeaking(sig)
@@ -551,9 +565,9 @@ test('Mode A stops when speaking stops', () => {
   assert.equal(sig.speaking, false)
 })
 
-test('Mode B drives the jaw from the envelope and nothing else', () => {
+test('audio-reactive drives the jaw from the envelope and nothing else', () => {
   const sig = signalModule.createReceptionSignal()
-  sig.lipSync = 'audio'
+  sig.lipSync = 'audio-reactive'
   sig.speaking = true
   let level = 0
   sig.envelope = () => level
@@ -569,7 +583,7 @@ test('Mode B drives the jaw from the envelope and nothing else', () => {
   assert.deepEqual(Object.keys(full).sort(), ['jawOpen', 'mouthFunnel'])
 })
 
-test('Mode C moves nothing at all', () => {
+test('no mouth controls means nothing moves at all', () => {
   const sig = signalModule.createReceptionSignal()
   sig.lipSync = 'none'
   signalModule.beginSpeaking(sig, visemes.visemeTimeline('hello'), 0)
@@ -598,7 +612,7 @@ test('the analyser envelope rises fast and falls slow', () => {
 
 test('native viseme weights are emitted under both spellings and sum to one', () => {
   const sig = signalModule.createReceptionSignal()
-  sig.lipSync = 'timed'
+  sig.lipSync = 'text-estimated'
   const timeline = visemes.visemeTimeline('welcome')
   signalModule.beginSpeaking(sig, timeline, 0)
   const weights = lipSync.sampleNativeVisemes(sig, 40)
@@ -1041,6 +1055,219 @@ await asyncTest('a word boundary re-anchors the mouth without rewinding it', asy
 })
 
 // ---------------------------------------------------------------------------
+// Server speech
+// ---------------------------------------------------------------------------
+
+/** A SpokenAudio that a test drives by hand. */
+function fakeAudio(outcome = 'playing') {
+  const state = { played: 0, stopped: 0, position: 0, level: 0.5, ended: false }
+  let onEnded = null
+  return {
+    state,
+    finish() {
+      state.ended = true
+      onEnded?.()
+    },
+    get ended() {
+      return state.ended
+    },
+    async play() {
+      state.played += 1
+      return outcome
+    },
+    stop() {
+      state.stopped += 1
+    },
+    clock: () => state.position,
+    envelope: () => state.level,
+    onEnded(listener) {
+      onEnded = listener
+    },
+  }
+}
+
+function fakeApi(speakResult) {
+  const state = { speakCalls: [], reset: 0 }
+  return {
+    state,
+    async capabilities() {
+      return null
+    },
+    lastCapabilities() {
+      return null
+    },
+    async ask() {
+      return { ok: true, data: { reply: 'x', suggestions: [], actions: [] } }
+    },
+    async speak(text) {
+      state.speakCalls.push(text)
+      return speakResult
+    },
+    async transcribe() {
+      return { ok: false, reason: 'no', code: 'x', retryable: false }
+    },
+    reset() {
+      state.reset += 1
+    },
+  }
+}
+
+const AUDIO_BLOB = { size: 4096, type: 'audio/mpeg' }
+
+await asyncTest('a server voice drives the mouth from the audio clock, not the wall clock', async () => {
+  const adapter = fakeAdapter(OK_REPLY)
+  const audio = fakeAudio('playing')
+  const api = fakeApi({ ok: true, data: AUDIO_BLOB })
+  const { convo, sig } = newConversation(adapter, {
+    api,
+    serverSpeech: () => true,
+    voiceOutput: fakeVoiceOutput(),
+    createAudio: () => audio,
+  })
+  convo.setVoiceOutput(true)
+
+  await convo.ask('hello')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.deepEqual(api.state.speakCalls, [OK_REPLY.data.text], 'the reply was sent for synthesis')
+  assert.equal(audio.state.played, 1, 'the audio was played')
+  assert.equal(sig.speaking, true)
+  assert.equal(sig.lipSync, 'audio-reactive', 'real audio means the envelope drives the mouth')
+  assert.ok(sig.clock, 'the audio clock is attached')
+
+  audio.state.position = 750
+  assert.equal(signalModule.scheduleTimeMs(sig, 999_999), 750, 'the wall clock is ignored')
+
+  audio.finish()
+  assert.equal(sig.speaking, false, 'the mouth stops when the audio ends')
+  assert.equal(convo.snapshot().voice.source, 'server')
+  convo.dispose()
+})
+
+await asyncTest('a blocked autoplay holds the audio and offers a tap', async () => {
+  const adapter = fakeAdapter(OK_REPLY)
+  const audio = fakeAudio('blocked')
+  const api = fakeApi({ ok: true, data: AUDIO_BLOB })
+  const { convo, sig } = newConversation(adapter, {
+    api,
+    serverSpeech: () => true,
+    voiceOutput: fakeVoiceOutput(),
+    createAudio: () => audio,
+  })
+  convo.setVoiceOutput(true)
+
+  await convo.ask('hello')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(convo.snapshot().playbackBlocked, true, 'the visitor is offered a tap')
+  assert.equal(audio.state.stopped, 0, 'the audio is held, not discarded')
+  assert.equal(sig.speaking, false, 'and the mouth does not move while nothing is playing')
+  // The reply is still readable: a blocked sound must not cost the words.
+  assert.equal(convo.snapshot().turns.at(-1).text, OK_REPLY.data.text)
+  convo.dispose()
+})
+
+await asyncTest('a speech failure keeps the reply and says what happened', async () => {
+  const adapter = fakeAdapter(OK_REPLY)
+  const speaker = fakeVoiceOutput()
+  const api = fakeApi({ ok: false, reason: 'The speech service refused the request.', code: 'speech_failed', retryable: false })
+  const { convo } = newConversation(adapter, {
+    api,
+    serverSpeech: () => true,
+    voiceOutput: speaker,
+    createAudio: () => fakeAudio(),
+  })
+  convo.setVoiceOutput(true)
+
+  await convo.ask('hello')
+  await new Promise((r) => setTimeout(r, 0))
+
+  const snapshot = convo.snapshot()
+  assert.equal(snapshot.turns.at(-1).text, OK_REPLY.data.text, 'the text survives')
+  assert.ok(/refused the request/.test(snapshot.voiceNotice ?? ''), snapshot.voiceNotice ?? 'no notice')
+  assert.equal(speaker.state.spoken.length, 1, 'the browser voice is the labelled fallback')
+  assert.equal(snapshot.voice.source, 'browser', 'and the interface says which voice was used')
+  convo.dispose()
+})
+
+await asyncTest('a cancelled turn never starts playing later', async () => {
+  const adapter = fakeAdapter(OK_REPLY)
+  const audio = fakeAudio('playing')
+  let release
+  const api = {
+    ...fakeApi({ ok: true, data: AUDIO_BLOB }),
+    async speak() {
+      return new Promise((resolve) => {
+        release = () => resolve({ ok: true, data: AUDIO_BLOB })
+      })
+    },
+  }
+  const { convo, sig } = newConversation(adapter, {
+    api,
+    serverSpeech: () => true,
+    voiceOutput: fakeVoiceOutput(),
+    createAudio: () => audio,
+  })
+  convo.setVoiceOutput(true)
+
+  await convo.ask('first')
+  convo.interrupt()
+  release()
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(audio.state.played, 0, 'audio for a cancelled turn must never start')
+  assert.equal(sig.speaking, false)
+  assert.equal(sig.clock, null, 'and no clock is left attached')
+  convo.dispose()
+})
+
+await asyncTest('pressing Talk stops the voice before opening the microphone', async () => {
+  const adapter = fakeAdapter(OK_REPLY)
+  const audio = fakeAudio('playing')
+  const voice = fakeVoiceInput()
+  const speaker = fakeVoiceOutput()
+  const api = fakeApi({ ok: true, data: AUDIO_BLOB })
+  const { convo } = newConversation(adapter, {
+    api,
+    serverSpeech: () => true,
+    voiceInput: voice,
+    voiceOutput: speaker,
+    createAudio: () => audio,
+  })
+  convo.setVoiceOutput(true)
+
+  await convo.ask('hello')
+  await new Promise((r) => setTimeout(r, 0))
+  assert.equal(audio.state.stopped, 0)
+
+  await convo.startVoice()
+  // Otherwise the recording captures the receptionist's own voice and
+  // transcribes it back as the visitor's next question.
+  assert.ok(audio.state.stopped >= 1, 'playing audio must stop before the microphone opens')
+  assert.ok(speaker.state.cancelled >= 1, 'and so must the browser voice')
+  convo.dispose()
+})
+
+await asyncTest('disposing releases the audio and the session', async () => {
+  const adapter = fakeAdapter(OK_REPLY)
+  const audio = fakeAudio('playing')
+  const api = fakeApi({ ok: true, data: AUDIO_BLOB })
+  const { convo } = newConversation(adapter, {
+    api,
+    serverSpeech: () => true,
+    voiceOutput: fakeVoiceOutput(),
+    createAudio: () => audio,
+  })
+  convo.setVoiceOutput(true)
+  await convo.ask('hello')
+  await new Promise((r) => setTimeout(r, 0))
+
+  convo.dispose()
+  assert.ok(audio.state.stopped >= 1, 'the audio element is released')
+  assert.equal(api.state.reset, 1, 'and the visitor session is dropped')
+})
+
+// ---------------------------------------------------------------------------
 // The procedural face
 // ---------------------------------------------------------------------------
 
@@ -1140,7 +1367,10 @@ test('the assembled face exposes a usable rig', () => {
   assert.equal(probed.canShapeMouth, true)
   assert.equal(probed.canOpenJaw, true)
   assert.equal(probed.canBlink, true)
-  assert.equal(capability.chooseLipSyncMode(probed, { analyser: false, text: true }), 'timed')
+  assert.equal(
+    capability.chooseLipSyncMode(probed, { visemeEvents: false, analyser: false, text: true }),
+    'text-estimated',
+  )
   assert.ok(built.triangles > 500 && built.triangles < 6000, `${built.triangles} triangles`)
   built.dispose()
 })
@@ -1185,11 +1415,28 @@ test('the measurement mode defaults safely', () => {
   assert.equal(measure.detectCharacterMode(''), 'idle')
 })
 
+test('the audio clock is preferred over the wall clock whenever audio is playing', () => {
+  const sig = signalModule.createReceptionSignal()
+  sig.lipSync = 'text-estimated'
+  signalModule.beginSpeaking(sig, visemes.visemeTimeline('hello there'), 1000)
+
+  // No audio: the schedule runs on the wall clock, measured from the start.
+  assert.equal(signalModule.scheduleTimeMs(sig, 1500), 500)
+
+  // With audio: the wall clock is ignored entirely. It measures how long ago
+  // the request was made, which includes the round trip and the decode.
+  sig.clock = () => 120
+  assert.equal(signalModule.scheduleTimeMs(sig, 9999), 120)
+
+  signalModule.endSpeaking(sig)
+  assert.equal(sig.clock, null, 'a stopped reply must not leave a clock attached')
+})
+
 test('the speaking measurement keeps the mouth moving', () => {
   const sig = signalModule.createReceptionSignal()
   const stop = measure.driveMeasurement(sig, 'speaking')
   assert.equal(sig.state, 'speaking')
-  assert.equal(sig.lipSync, 'timed')
+  assert.equal(sig.lipSync, 'text-estimated')
   assert.ok(sig.timeline.length > 20)
   stop()
   assert.equal(sig.state, 'idle')
@@ -1231,13 +1478,29 @@ await asyncTest('no provider credential is read in the browser bundle', async ()
 await asyncTest('speech never starts itself', async () => {
   const { readFileSync } = await import('node:fs')
   const speech = readFileSync('src/lobby/reception/speech.ts', 'utf8')
-  // getUserMedia must appear exactly once, inside start().
-  assert.equal((speech.match(/getUserMedia\(/g) ?? []).length, 1)
-  assert.ok(/for \(const track of stream\.getTracks\(\)\) track\.stop\(\)/.test(speech),
-    'every captured track must be stopped')
+  // Two engines now — the browser recogniser and the server recorder — and each
+  // opens the microphone in exactly one place: its own start().
+  const opens = [...speech.matchAll(/getUserMedia\(/g)]
+  assert.equal(opens.length, 2, 'the microphone is opened in exactly two places')
+  for (const match of opens) {
+    const before = speech.slice(0, match.index)
+    const lastStart = before.lastIndexOf('async start(')
+    const lastStop = before.lastIndexOf('    stop()')
+    assert.ok(lastStart > lastStop, 'every getUserMedia must sit inside a start()')
+  }
+  // And each engine stops every track it opened.
+  assert.equal(
+    (speech.match(/for \(const track of stream\.getTracks\(\)\) track\.stop\(\)/g) ?? []).length,
+    2,
+    'both engines must release every captured track',
+  )
   const convoSource = readFileSync('src/lobby/reception/conversation.ts', 'utf8')
-  assert.ok(/outputEnabled && voiceOutput/.test(convoSource), 'speech is gated on an explicit opt-in')
-  assert.ok(/let outputEnabled = false/.test(convoSource), 'and that opt-in starts off')
+  assert.ok(/let outputEnabled = false/.test(convoSource), 'the opt-in starts off')
+  // Every route that makes a sound is gated on it — the server voice and the
+  // browser voice alike. Behaviour is pinned by the tests above; this catches
+  // a third path being added without the gate.
+  assert.ok(/if \(!outputEnabled \|\| !voiceOutput\) return false/.test(convoSource), 'the browser voice is gated')
+  assert.ok(/if \(outputEnabled && api && serverSpeech\(\)\)/.test(convoSource), 'the server voice is gated')
 })
 
 // ---------------------------------------------------------------------------
