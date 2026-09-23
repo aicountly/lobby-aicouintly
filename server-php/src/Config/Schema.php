@@ -98,6 +98,11 @@ final class Schema
                 'voice' => ['mode' => 'browser', 'voiceId' => '', 'rate' => 1.0],
             ],
             'visitorServices' => ['booking' => false, 'enquiry' => false, 'handover' => false],
+            // References, not copies. Appointments owns the company and the
+            // branch; these are the ids used to ask it about the right one,
+            // exactly as Appointments itself holds a reference uuid for a
+            // contact rather than a contact.
+            'booking' => ['companyId' => 0, 'locationId' => 0],
         ];
     }
 
@@ -195,6 +200,22 @@ final class Schema
         $services = is_array($in['visitorServices'] ?? null) ? $in['visitorServices'] : [];
         foreach (['booking', 'enquiry', 'handover'] as $journey) {
             $out['visitorServices'][$journey] = (bool) ($services[$journey] ?? false);
+        }
+
+        // --- booking references ---------------------------------------------
+        $booking = is_array($in['booking'] ?? null) ? $in['booking'] : [];
+        $out['booking']['companyId'] = max(0, (int) ($booking['companyId'] ?? 0));
+        $out['booking']['locationId'] = max(0, (int) ($booking['locationId'] ?? 0));
+
+        // Switching booking on without saying which company to book against
+        // produces a journey that opens and immediately reports itself
+        // unavailable. Caught here, at the form, rather than in front of a
+        // visitor.
+        if ($out['visitorServices']['booking'] && $out['booking']['companyId'] === 0) {
+            $errors[] = [
+                'field' => 'booking.companyId',
+                'message' => 'Set the Appointments company id before switching booking on.',
+            ];
         }
 
         return ['data' => $out, 'errors' => $errors];

@@ -17,6 +17,9 @@ declare(strict_types=1);
  *   POST /api/lobby/reception        one turn of the reception conversation
  *   POST /api/lobby/speech           synthesise a validated reply
  *   POST /api/lobby/transcribe       transcribe one recording
+ *   GET  /api/lobby/booking/services availability types, from Appointments
+ *   GET  /api/lobby/booking/slots    free times, from Appointments
+ *   POST /api/lobby/booking          ask Appointments to make a booking
  *   GET  /api/lobby/handover         where this visitor is in the queue
  *   POST /api/lobby/handover         ask to speak to a person
  *   POST /api/lobby/handover/cancel  withdraw that request
@@ -58,6 +61,8 @@ require __DIR__ . '/src/Desk/Queue.php';
 require __DIR__ . '/src/Desk/Presence.php';
 require __DIR__ . '/src/Http/AdminController.php';
 require __DIR__ . '/src/Http/DeskController.php';
+require __DIR__ . '/src/Integration/AppointmentsClient.php';
+require __DIR__ . '/src/Http/BookingController.php';
 require __DIR__ . '/src/Http/HandoverController.php';
 require __DIR__ . '/src/Ai/ConsoleCredentials.php';
 require __DIR__ . '/src/Provider/Contracts.php';
@@ -613,6 +618,65 @@ if ($path === 'lobby/transcribe') {
     }
 
     send_json(200, ['text' => $result['text']]);
+}
+
+// ---------------------------------------------------------------------------
+// Booking — relayed to Aicountly Appointments
+//
+// Relayed rather than called from the browser because the call is
+// authenticated with this product's service key for Appointments, and every
+// VITE_* value is inlined into the bundle at build time. Lobby keeps nothing
+// that comes back.
+// ---------------------------------------------------------------------------
+
+if ($path === 'lobby/booking' || strpos($path, 'lobby/booking/') === 0) {
+    $session = require_visitor_session();
+    $controller = new Http\BookingController(
+        Knowledge::forTenant($session->tenantId, config_store()),
+        $session,
+    );
+
+    if ($path === 'lobby/booking/services') {
+        if ($method !== 'GET') {
+            send_json(405, ['message' => 'Use GET.']);
+        }
+        send_result($controller->services());
+    }
+
+    if ($path === 'lobby/booking/slots') {
+        if ($method !== 'GET') {
+            send_json(405, ['message' => 'Use GET.']);
+        }
+        send_result($controller->slots([
+            'service' => (string) ($_GET['service'] ?? ''),
+            'date' => (string) ($_GET['date'] ?? ''),
+        ]));
+    }
+
+    if ($path === 'lobby/booking') {
+        if ($method !== 'POST') {
+            send_json(405, ['message' => 'Use POST.']);
+        }
+
+        // Tighter than the reception limit: this one reaches another product
+        // and can create a record there.
+        enforce_limit(
+            'booking:session:' . $session->conversationId,
+            (int) Env::get('LOBBY_BOOKING_LIMIT_PER_HOUR', '10'),
+            3600,
+            'You have made several booking attempts. Give it a moment.',
+        );
+        enforce_limit(
+            'booking:ip:' . RateLimit::clientIp(),
+            (int) Env::get('LOBBY_BOOKING_LIMIT_PER_DAY', '40'),
+            86400,
+            'Too many booking attempts from this address.',
+        );
+
+        send_result($controller->book(read_json_body()));
+    }
+
+    send_json(404, ['message' => 'Not found.']);
 }
 
 // ---------------------------------------------------------------------------

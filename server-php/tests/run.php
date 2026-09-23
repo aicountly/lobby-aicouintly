@@ -25,6 +25,7 @@ use Aicountly\Api\Ai\ConsoleCredentials;
 use Aicountly\Api\Config\ConfigStore;
 use Aicountly\Api\Config\Schema;
 use Aicountly\Api\Desk\Queue;
+use Aicountly\Api\Integration\AppointmentsClient;
 use Aicountly\Api\Store\FileRepository;
 use Aicountly\Api\Provider\AnthropicConversation;
 use Aicountly\Api\Provider\ConversationProvider;
@@ -50,6 +51,8 @@ require __DIR__ . '/../src/Desk/Queue.php';
 require __DIR__ . '/../src/Desk/Presence.php';
 require __DIR__ . '/../src/Http/AdminController.php';
 require __DIR__ . '/../src/Http/DeskController.php';
+require __DIR__ . '/../src/Integration/AppointmentsClient.php';
+require __DIR__ . '/../src/Http/BookingController.php';
 require __DIR__ . '/../src/Http/HandoverController.php';
 require __DIR__ . '/../src/Ai/ConsoleCredentials.php';
 require __DIR__ . '/../src/Provider/Contracts.php';
@@ -89,6 +92,9 @@ function allJourneys(): Knowledge
     return knowledgeFor([
         'business' => ['name' => 'Test Business'],
         'visitorServices' => ['booking' => true, 'enquiry' => true, 'handover' => true],
+        // A company id, so the document is one the real save path would accept
+        // rather than one that only validates because the test ignores errors.
+        'booking' => ['companyId' => 42],
     ]);
 }
 
@@ -1281,6 +1287,216 @@ test('the configured persona shapes the prompt without becoming an instruction c
     // The rules the tenant cannot reach are still there.
     ok(str_contains($prompt, 'Do not invent or estimate anything'), 'the standing rules survive any persona');
 });
+
+
+// ---------------------------------------------------------------------------
+// Booking, against a stand-in Appointments
+//
+// Over real HTTP rather than a mocked client, because the behaviour worth
+// pinning is about HTTP: which header the second attempt carries, and what
+// this code concludes when a connection dies mid-request. An object that
+// cannot fail that way cannot prove it.
+// ---------------------------------------------------------------------------
+
+/** @return array{0: ?resource, 1: string} */
+function startFakeAppointments(): array
+{
+    $port = 8900 + (getmypid() % 300);
+    $base = 'http://127.0.0.1:' . $port;
+    $fixture = __DIR__ . '/fixtures/fake-appointments.php';
+
+    $process = @proc_open(
+        sprintf('exec php -S 127.0.0.1:%d %s', $port, escapeshellarg($fixture)),
+        [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']],
+        $pipes,
+    );
+
+    if (!is_resource($process)) {
+        return [null, $base];
+    }
+
+    // Wait for it rather than sleeping a guessed amount.
+    for ($i = 0; $i < 60; $i++) {
+        $socket = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.2);
+        if ($socket !== false) {
+            fclose($socket);
+
+            return [$process, $base];
+        }
+        usleep(50000);
+    }
+
+    proc_terminate($process);
+
+    return [null, $base];
+}
+
+function resetFakeAppointments(string $base): void
+{
+    @file_get_contents($base . '/__reset', false, stream_context_create([
+        'http' => ['header' => "X-Service-Key: ok\r\n", 'timeout' => 2],
+    ]));
+    @unlink(sys_get_temp_dir() . '/fake-appointments-state.json');
+}
+
+/** @return array<int, array{key: string, at: float}> */
+function fakeAppointmentsCalls(string $base): array
+{
+    $raw = @file_get_contents($base . '/__calls', false, stream_context_create([
+        'http' => ['header' => "X-Service-Key: ok\r\n", 'timeout' => 2],
+    ]));
+    $decoded = json_decode((string) $raw, true);
+
+    return is_array($decoded['calls'] ?? null) ? $decoded['calls'] : [];
+}
+
+[$fakeAppointments, $appointmentsBase] = startFakeAppointments();
+
+if ($fakeAppointments === null) {
+    test('booking tests could not run — the stand-in Appointments would not start', function () {
+        // Reported as a failure rather than skipped. A suite that silently
+        // drops its integration tests looks identical to one that passes them.
+        throw new \RuntimeException('could not start the fixture server');
+    });
+} else {
+    $bookingEnv = static fn (string $scenario): array => [
+        'LOBBY_APPOINTMENTS_API_BASE' => $GLOBALS['appointmentsBase'],
+        'LOBBY_APPOINTMENTS_SERVICE_KEY' => $scenario,
+    ];
+
+    test('a booking is confirmed only when Appointments names one', function () use ($bookingEnv, $appointmentsBase) {
+        resetFakeAppointments($appointmentsBase);
+
+        withEnv($bookingEnv('ok'), function () {
+            $client = new AppointmentsClient(42);
+            ok($client->configured(), 'the client is configured');
+
+            $result = $client->book(
+                ['serviceId' => 'svc-1', 'startsAt' => '2026-10-01T09:00:00Z', 'name' => 'Asha', 'email' => 'a@example.com'],
+                AppointmentsClient::idempotencyKey('conv1', 'svc-1', '2026-10-01T09:00:00Z'),
+            );
+
+            same('ok', $result['outcome'], 'it is confirmed');
+            ok(str_starts_with($result['booking']['reference'], 'APT-'), 'and carries the reference Appointments gave');
+        });
+    });
+
+    test('a refusal is a refusal, not a retryable failure', function () use ($bookingEnv, $appointmentsBase) {
+        resetFakeAppointments($appointmentsBase);
+
+        withEnv($bookingEnv('refuse'), function () {
+            $result = (new AppointmentsClient(42))->book(
+                ['serviceId' => 'svc-1', 'startsAt' => '2026-10-01T09:00:00Z', 'name' => 'Asha', 'email' => 'a@example.com'],
+                AppointmentsClient::idempotencyKey('conv1', 'svc-1', '2026-10-01T09:00:00Z'),
+            );
+
+            same('refused', $result['outcome'], 'the visitor is told it was declined');
+            same('slot_taken', $result['code'], 'with the reason Appointments gave, so they can pick another time');
+        });
+    });
+
+    test('a 2xx with no reference is uncertain, never a confirmation', function () use ($bookingEnv, $appointmentsBase) {
+        resetFakeAppointments($appointmentsBase);
+
+        withEnv($bookingEnv('noref'), function () {
+            $result = (new AppointmentsClient(42))->book(
+                ['serviceId' => 'svc-1', 'startsAt' => '2026-10-01T09:00:00Z', 'name' => 'Asha', 'email' => 'a@example.com'],
+                AppointmentsClient::idempotencyKey('conv1', 'svc-1', '2026-10-01T09:00:00Z'),
+            );
+
+            same('uncertain', $result['outcome'], 'a success with nothing identifying it is not a success');
+            same([], $result['booking'], 'and nothing is invented to fill the gap');
+        });
+    });
+
+    test('a dropped connection is re-sent under the SAME idempotency key', function () use ($bookingEnv, $appointmentsBase) {
+        resetFakeAppointments($appointmentsBase);
+
+        withEnv($bookingEnv('die-once'), function () use ($appointmentsBase) {
+            $key = AppointmentsClient::idempotencyKey('conv1', 'svc-1', '2026-10-01T09:00:00Z');
+            $result = (new AppointmentsClient(42))->book(
+                ['serviceId' => 'svc-1', 'startsAt' => '2026-10-01T09:00:00Z', 'name' => 'Asha', 'email' => 'a@example.com'],
+                $key,
+            );
+
+            same('ok', $result['outcome'], 'the second attempt gets the answer');
+
+            $calls = fakeAppointmentsCalls($appointmentsBase);
+            same(2, count($calls), 'exactly two attempts were made');
+            same($key, $calls[0]['key'], 'the first carried the key');
+            // The whole safety argument: the re-send asks "did the first one
+            // land?" rather than asking for a second booking. A fresh key here
+            // would give one visitor two appointments.
+            same($key, $calls[1]['key'], 'and the second carried the SAME key');
+        });
+    });
+
+    test('two dropped attempts report uncertain rather than either answer', function () use ($bookingEnv, $appointmentsBase) {
+        resetFakeAppointments($appointmentsBase);
+
+        withEnv($bookingEnv('die-always'), function () use ($appointmentsBase) {
+            $result = (new AppointmentsClient(42))->book(
+                ['serviceId' => 'svc-1', 'startsAt' => '2026-10-01T09:00:00Z', 'name' => 'Asha', 'email' => 'a@example.com'],
+                AppointmentsClient::idempotencyKey('conv1', 'svc-1', '2026-10-01T09:00:00Z'),
+            );
+
+            same('uncertain', $result['outcome'], 'it must not claim success');
+            ok(str_contains($result['error'], 'could not confirm'), 'and must say so plainly');
+            ok(str_contains($result['error'], 'check before booking again'), 'and tell the visitor what to do');
+
+            same(2, count(fakeAppointmentsCalls($appointmentsBase)), 'and must stop at two attempts, not keep trying');
+        });
+    });
+
+    test('pressing book twice for the same slot is one appointment', function () use ($bookingEnv, $appointmentsBase) {
+        resetFakeAppointments($appointmentsBase);
+
+        withEnv($bookingEnv('ok'), function () {
+            $client = new AppointmentsClient(42);
+            $request = ['serviceId' => 'svc-1', 'startsAt' => '2026-10-01T09:00:00Z', 'name' => 'Asha', 'email' => 'a@example.com'];
+            $key = AppointmentsClient::idempotencyKey('conv1', 'svc-1', '2026-10-01T09:00:00Z');
+
+            $first = $client->book($request, $key);
+            $second = $client->book($request, $key);
+
+            same($first['booking']['reference'], $second['booking']['reference'], 'the same reference comes back, not a second booking');
+        });
+
+        // A different slot is a different booking, so the key must differ.
+        $a = AppointmentsClient::idempotencyKey('conv1', 'svc-1', '2026-10-01T09:00:00Z');
+        $b = AppointmentsClient::idempotencyKey('conv1', 'svc-1', '2026-10-01T10:00:00Z');
+        ok($a !== $b, 'a different time is a different key');
+        ok(!str_contains($a, 'conv1'), 'and the conversation id is hashed, not sent to another product in the clear');
+    });
+
+    test('a calendar that cannot be read is not reported as no availability', function () use ($bookingEnv, $appointmentsBase) {
+        resetFakeAppointments($appointmentsBase);
+
+        withEnv($bookingEnv('down'), function () {
+            $result = (new AppointmentsClient(42))->slots('svc-1', '2026-10-01T00:00:00Z', '2026-10-01T23:59:59Z');
+
+            same(false, $result['ok'], 'it is a failure, not an empty day');
+            same(true, $result['retryable'], 'and one worth trying again');
+            same([], $result['slots'], 'with no slots invented');
+        });
+    });
+
+    test('an unconfigured booking client refuses rather than calling anything', function () {
+        withEnv(['LOBBY_APPOINTMENTS_API_BASE' => null, 'LOBBY_APPOINTMENTS_SERVICE_KEY' => null], function () {
+            $client = new AppointmentsClient(0);
+            ok(!$client->configured(), 'it knows it is not configured');
+            ok(str_contains($client->unconfiguredReason(), 'LOBBY_APPOINTMENTS_API_BASE'), 'and names the missing setting');
+
+            $result = $client->book(['serviceId' => 'x', 'startsAt' => 'y'], 'key');
+            same('unavailable', $result['outcome'], 'and books nothing');
+        });
+    });
+
+    register_shutdown_function(static function () use ($fakeAppointments, $appointmentsBase) {
+        resetFakeAppointments($appointmentsBase);
+        proc_terminate($fakeAppointments);
+    });
+}
 
 // ---------------------------------------------------------------------------
 

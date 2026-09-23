@@ -148,6 +148,25 @@ final class Knowledge
     }
 
     /**
+     * Which company in Appointments this tenant books against.
+     *
+     * A reference to somebody else's record, never a copy of it. Lobby holds
+     * no company master, no branch master and no service catalogue — it holds
+     * the two integers needed to ask Appointments about the right one.
+     *
+     * @return array{companyId: int, locationId: int}
+     */
+    public function booking(): array
+    {
+        $booking = is_array($this->config['booking'] ?? null) ? $this->config['booking'] : [];
+
+        return [
+            'companyId' => max(0, (int) ($booking['companyId'] ?? 0)),
+            'locationId' => max(0, (int) ($booking['locationId'] ?? 0)),
+        ];
+    }
+
+    /**
      * Render the approved knowledge as plain text for the prompt.
      *
      * Deliberately flat and readable rather than JSON: the model reads it
