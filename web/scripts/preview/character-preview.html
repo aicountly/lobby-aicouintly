@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lobby character preview</title>
+<style>html,body{margin:0;height:100%;background:#8c8c8c}canvas{display:block}</style>
+<script type="importmap">
+{"imports":{"three":"/three/build/three.module.js","three/":"/three/"}}
+</script>
+</head>
+<body>
+<script type="module">
+/**
+ * Development-only character preview.
+ *
+ * Loads the shipped model through the same GLTFLoader the lobby uses and
+ * exposes a small API the capture script drives. It exists so a character can
+ * be reviewed from every side and in every expression WITHOUT the room, the
+ * HUD or the conversation in the way — all of which hid the mouth the last
+ * time a face needed judging.
+ *
+ * Not part of the app bundle and never served from it.
+ */
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.outputColorSpace = THREE.SRGBColorSpace
+document.body.appendChild(renderer.domElement)
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x8c8c8c)
+
+// Neutral preview lighting: even, no strong key, so the character is judged on
+// its own textures rather than on a flattering rig. The lobby's own lighting is
+// checked separately, in the lobby.
+scene.add(new THREE.AmbientLight(0xffffff, 1.9))
+const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(0.6, 2.2, 2.4); scene.add(key)
+const fill = new THREE.DirectionalLight(0xffffff, 0.55); fill.position.set(-2, 1.2, 1.2); scene.add(fill)
+const rim = new THREE.DirectionalLight(0xffffff, 0.5); rim.position.set(0, 1.5, -2.5); scene.add(rim)
+
+const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 60)
+
+const url = new URLSearchParams(location.search).get('model') ?? '/model.glb'
+const gltf = await new GLTFLoader().loadAsync(url)
+scene.add(gltf.scene)
+scene.updateMatrixWorld(true)
+
+const box = new THREE.Box3().setFromObject(gltf.scene)
+const centre = box.getCenter(new THREE.Vector3())
+const height = box.max.y - box.min.y
+
+const morphMeshes = []
+gltf.scene.traverse((o) => { if (o.morphTargetDictionary && o.morphTargetInfluences) morphMeshes.push(o) })
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight
+  renderer.setSize(w, h, false)
+  camera.aspect = w / h
+  camera.updateProjectionMatrix()
+}
+window.addEventListener('resize', resize)
+resize()
+
+function setMorphs(pose) {
+  for (const mesh of morphMeshes) {
+    for (const [name, index] of Object.entries(mesh.morphTargetDictionary)) {
+      mesh.morphTargetInfluences[index] = pose[name] ?? 0
+    }
+  }
+}
+
+/** Frame the whole figure, or just the head. */
+window.__preview = {
+  height,
+  morphNames: morphMeshes.flatMap((m) => Object.keys(m.morphTargetDictionary)),
+  view(yawDeg, mode) {
+    const yaw = (yawDeg * Math.PI) / 180
+    if (mode === 'head') {
+      const head = gltf.scene.getObjectByName('Bip01_Head') ?? gltf.scene.getObjectByName('Head')
+      const p = new THREE.Vector3()
+      ;(head ?? gltf.scene).getWorldPosition(p)
+      const d = 0.55
+      camera.position.set(p.x + Math.sin(yaw) * d, p.y + 0.06, p.z + Math.cos(yaw) * d)
+      camera.lookAt(p.x, p.y + 0.04, p.z)
+    } else {
+      // Far enough that the whole figure fits the vertical field of view, with
+      // a margin, computed rather than hand-tuned so any character frames.
+      const d = (height * 0.62) / Math.tan((camera.fov * Math.PI) / 360)
+      camera.position.set(centre.x + Math.sin(yaw) * d, box.min.y + height * 0.55, centre.z + Math.cos(yaw) * d)
+      camera.lookAt(centre.x, box.min.y + height * 0.5, centre.z)
+    }
+  },
+  expression(pose) { setMorphs(pose) },
+  bone(name, x, y, z) {
+    const b = gltf.scene.getObjectByName(name)
+    if (!b) return false
+    b.userData._rest ??= b.quaternion.clone()
+    b.quaternion.copy(b.userData._rest).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z)))
+    return true
+  },
+}
+
+window.__preview.view(0)
+let frames = 0
+;(function loop() {
+  requestAnimationFrame(loop)
+  scene.updateMatrixWorld(true)
+  renderer.render(scene, camera)
+  if (++frames === 6) window.__previewReady = true
+})()
+</script>
+</body>
+</html>

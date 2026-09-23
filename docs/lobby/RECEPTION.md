@@ -40,13 +40,14 @@ make and are not true:
   [Receipts](#receipts).
 - **Nobody is contacted.** Asking for a person produces a handover that says
   what *would* happen. It does not send anything.
-- **The character is not photoreal.** It is a real human model now rather than
-  the generated stylised figure — a parametric human from the MakeHuman
-  ecosystem, with the full ARKit 52 blendshape set and a proper humanoid
-  skeleton. But it is not a scan and not a sculpt, and it ships with **no
-  animation clips**: the body is posed in code, which the capability panel says
-  out loud. It is localised for India in **colour only** — skin, hair and
-  clothing — because the facial geometry cannot be changed without Blender.
+- **The character is not the approved reference.** She is Microsoft RocketBox's
+  `Business_Female_01` — MIT licensed, a real rigged human in a tailored trouser
+  suit with the full ARKit 52 and all 15 OVR visemes. She is **a different woman
+  from the approved design reference**: the suit is charcoal rather than
+  emerald, the hair is short rather than long and half-up, and there is no
+  badge. [ASSETS.md](ASSETS.md) lists every difference and why each one stands.
+- **She ships with no animation clips.** The body is posed in code, which the
+  capability panel says out loud.
   See [ASSETS.md](ASSETS.md) for the licence, the budgets it breaks and what
   reducing it cost.
 - **Where audio goes depends on which engine is configured, and the panel says
@@ -317,10 +318,13 @@ what it has, one with neither gets Mode C.
 
 ## The face
 
-The shipped character supplies its own: **all 52 ARKit blendshapes**, with 11 of
-the 15 OVR visemes native and the other four built from the ARKit set by
-`VISEME_TO_ARKIT`. It is CC0, and [ASSETS.md](ASSETS.md) records where it came
-from and the non-commercial candidate that was rejected.
+The shipped character supplies its own: **all 52 ARKit blendshapes and all 15
+OVR visemes**, so `VISEME_TO_ARKIT` is no longer needed to fill gaps — it stays
+for characters that need it. Verified by probing the mounted model rather than
+read off a manifest: `npm run inspect:character` reports what the file actually
+contains, and `node scripts/preview-character.mjs` renders each control so a
+reviewer can see the blink close, the jaw open with the teeth inside the mouth,
+and the smile stay restrained.
 
 A character with a real viseme set is also what exposed a bug that had been
 latent since Phase 2B. The per-frame face pose is composed into a reused object
