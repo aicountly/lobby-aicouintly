@@ -41,7 +41,7 @@ import { retimedOffset, timelineDurationMs, visemeTimeline } from './visemes'
 // Shortcuts and intent
 // ---------------------------------------------------------------------------
 
-export type ServiceShortcutKey = 'booking' | 'enquiry' | 'team'
+export type ServiceShortcutKey = 'booking' | 'enquiry' | 'team' | 'handover'
 
 export interface ServiceShortcut {
   key: ServiceShortcutKey
@@ -60,6 +60,13 @@ const SHORTCUT_PATTERNS: { key: ServiceShortcutKey; label: string; match: RegExp
     match: /\b(enquiry|enquire|inquiry|inquire|quote|pricing|price|cost|message|contact|email|call me|get back)\b/i,
   },
   {
+    key: 'handover',
+    label: 'Ask for a person',
+    // Before the generic 'team' pattern below, which would otherwise swallow
+    // "can I speak to someone" on the word "speak".
+    match: /\b(human|person|someone|somebody|real person|speak to|talk to|receptionist|staff|agent)\b/i,
+  },
+  {
     key: 'team',
     label: 'Ask reception another question',
     match: /\b(question|ask|help|support|problem|issue)\b/i,
@@ -72,6 +79,38 @@ export function detectShortcut(text: string): ServiceShortcut | null {
     if (candidate.match.test(text)) return { key: candidate.key, label: candidate.label }
   }
   return null
+}
+
+/**
+ * What the receptionist actually proposed, mapped to a journey.
+ *
+ * The backend validates every action against an allowlist and drops any whose
+ * journey this business has switched off, so what arrives here is already the
+ * set of things the visitor may legitimately be offered. Using it is what makes
+ * that gating mean anything: until now the interface ignored it entirely and
+ * guessed from a regex over the visitor's own words, which meant asking "can I
+ * speak to someone?" opened the question panel rather than the queue, and a
+ * business with booking switched off could still be shown a booking chip.
+ *
+ * The keyword match stays as the fallback for a reply that proposed nothing,
+ * and for the demonstration adapter, which has no actions to propose.
+ */
+const ACTION_SHORTCUTS: Record<string, ServiceShortcut> = {
+  offer_booking: { key: 'booking', label: 'Open the booking journey' },
+  offer_enquiry: { key: 'enquiry', label: 'Leave an enquiry' },
+  request_handover: { key: 'handover', label: 'Ask for a person' },
+}
+
+export function shortcutForReply(
+  actions: readonly { name: string }[] | undefined,
+  question: string,
+): ServiceShortcut | null {
+  for (const action of actions ?? []) {
+    const shortcut = ACTION_SHORTCUTS[action.name]
+    if (shortcut) return shortcut
+  }
+
+  return detectShortcut(question)
 }
 
 const HANDOVER_PATTERN =
@@ -584,7 +623,9 @@ export function createReceptionConversation(options: ConversationOptions): Recep
       return
     }
 
-    shortcut = detectShortcut(question)
+    // What the receptionist proposed, where it proposed anything. The backend
+    // has already dropped whatever this business does not offer.
+    shortcut = shortcutForReply(outcome.data.actions, question)
     suggestions = outcome.data.suggestions
     deliver(outcome.data.text, token, 'answering')
   }

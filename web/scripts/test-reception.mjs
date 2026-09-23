@@ -1059,6 +1059,48 @@ await asyncTest('the mouth stays closed until the voice actually starts', async 
   convo.dispose()
 })
 
+await asyncTest('the journey offered comes from what reception proposed', async () => {
+  const { shortcutForReply } = conversation
+
+  // The backend validates every action against an allowlist and drops any
+  // whose journey the business switched off. Using its answer is what makes
+  // that gating mean anything to a visitor.
+  assert.equal(
+    shortcutForReply([{ name: 'request_handover' }], 'what are your opening hours')?.key,
+    'handover',
+    'the proposed action wins over the words the visitor used',
+  )
+  assert.equal(shortcutForReply([{ name: 'offer_booking' }], 'hello')?.key, 'booking')
+  assert.equal(shortcutForReply([{ name: 'offer_enquiry' }], 'hello')?.key, 'enquiry')
+
+  // An action the allowlist does not know is not a journey.
+  assert.equal(shortcutForReply([{ name: 'transfer_funds' }], 'hello'), null)
+
+  // No action proposed falls back to the keyword match, which is what the
+  // demonstration adapter relies on — it has no actions to propose.
+  assert.equal(shortcutForReply([], 'I would like to book an appointment')?.key, 'booking')
+  assert.equal(shortcutForReply(undefined, 'can I speak to a person')?.key, 'handover')
+})
+
+await asyncTest('asking for a person does not open the question panel', async () => {
+  // The regression this ordering exists to prevent: "speak to" contains no
+  // handover keyword under the old patterns, but "ask"/"help" match 'team',
+  // so asking for a human opened another text box.
+  const { detectShortcut } = conversation
+
+  for (const question of [
+    'can I speak to a person',
+    'I want to talk to someone',
+    'is there a real person there',
+    'can I ask a human for help',
+  ]) {
+    assert.equal(detectShortcut(question)?.key, 'handover', `"${question}" must reach the queue`)
+  }
+
+  // And a plain question still does not.
+  assert.equal(detectShortcut('I have a question about parking')?.key, 'team')
+})
+
 await asyncTest('the lip-sync lead is measured, not assumed', async () => {
   // Evidence rather than a boolean. The Phase 2E report said the mouth led the
   // voice; this puts a number on what the fix is worth, on a controlled clock,

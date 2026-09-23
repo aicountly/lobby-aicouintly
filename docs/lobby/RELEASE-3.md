@@ -45,7 +45,7 @@ capability report: that says a credential resolved, not that a model answered.
 **Nothing in the "Live-verified" column is a yes, and that is not modesty.**
 `lobby.aicountly.com:443` is refused by this environment's network policy, so
 no part of this phase has been exercised against the deployed host from here.
-Everything marked implemented was verified locally: 76 PHP tests, 100 numeric
+Everything marked implemented was verified locally: 76 PHP tests, 102 numeric
 tests, 23 browser checks, a real 16-process concurrency test, real HTTP against
 a stand-in Appointments, and real `rsync` against a simulated server.
 
@@ -125,10 +125,18 @@ visitor sits down and waits on the strength of it. `LOBBY_DESK_ALWAYS_OPEN`
 exists for deployments whose staff work elsewhere, and the diagnostic reports
 it when it is on.
 
-**Journeys are gated twice.** A journey a business has switched off is not
-offered to the model *and* is dropped if the model proposes it anyway.
-Withholding the tool is what makes the model behave; dropping the output is what
-makes it true.
+**Journeys are gated twice, and the gate is now connected to the interface.**
+A journey a business has switched off is not offered to the model *and* is
+dropped if the model proposes it anyway. Withholding the tool is what makes the
+model behave; dropping the output is what makes it true.
+
+Until this phase the interface ignored the result: it guessed which journey to
+offer from a regex over the visitor's own words, so the careful server-side
+allowlist reached nobody. Asking "can I speak to a person?" opened another text
+box, and a business with booking switched off could still be shown a booking
+chip. The chip now comes from the validated actions, with the keyword match as
+the fallback for a reply that proposed nothing — which is what the
+demonstration adapter relies on, having no actions to propose.
 
 **One re-send, and only because Appointments replays.** See
 [INTEGRATIONS.md → Retrying](INTEGRATIONS.md#retrying-and-why-there-is-exactly-one-re-send).
@@ -157,7 +165,7 @@ accident while setting up the concurrency test, then pinned with a test.
 | What | Result |
 | --- | --- |
 | PHP tests | 76/76 |
-| Numeric tests | 100/100 |
+| Numeric tests | 102/102 |
 | Browser checks | 23/23 |
 | `npm run build` + `tsc -b` | clean |
 | Concurrent claims, 16 real processes | 1 winner, 15 correctly refused |
@@ -167,7 +175,7 @@ accident while setting up the concurrency test, then pinned with a test.
 | Deploy rsync against a simulated server | `.env`, `knowledge.json`, `data/` survive `--delete`; stale files removed; 0 files under `tests/` sent |
 | Staff routes with a visitor token | 401 on all five, as a bearer and as `X-Lobby-Session` |
 | Lip-sync lead, on a controlled clock | anchored at `onStart`, 700 ms after issue — a 0 ms lead |
-| Mutation tests | draft-as-published fails 2; claim without a holder check fails 1; prompt-only journey gate fails 1; fresh retry key fails 1; reference-less 2xx accepted fails 1; anchoring at issue time fails 2 |
+| Mutation tests | draft-as-published fails 2; claim without a holder check fails 1; prompt-only journey gate fails 1; fresh retry key fails 1; reference-less 2xx accepted fails 1; anchoring at issue time fails 2; ignoring the validated actions fails 1 |
 
 ### Mutation testing, and why it is in this table
 
