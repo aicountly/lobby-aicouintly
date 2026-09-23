@@ -19,6 +19,23 @@ declare(strict_types=1);
 
 namespace Aicountly\Api;
 
+/**
+ * CLI only.
+ *
+ * `server-php/` is rsynced into `<document root>/api`, so without this every
+ * file under it is a URL. This suite was reachable at
+ * `https://<host>/api/tests/run.php` and answered 200 to anyone: it ran the
+ * whole suite on each request, printed server paths, and — once it grew an
+ * integration fixture — started a PHP process from an unauthenticated GET.
+ *
+ * The deploy workflows now exclude `tests/` as well. This guard is the half
+ * that does not depend on remembering an rsync filter.
+ */
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
 use Aicountly\Api\Access\Role;
 use Aicountly\Api\Access\StaffSession;
 use Aicountly\Api\Ai\ConsoleCredentials;

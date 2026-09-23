@@ -302,11 +302,28 @@ jobs:
           # left alone. It holds the tenant's approved business information, so
           # losing it silently takes reception back to "it does not know". Only
           # knowledge.example.json ships.
+          #
+          # data/ is excluded for the same reason and as a safety net, not as
+          # permission. LOBBY_DATA_DIR is supposed to point OUTSIDE the document
+          # root — the store refuses to guess a location precisely because of
+          # this rsync — but an operator who pointed it at api/data would
+          # otherwise lose every tenant's configuration and queue on the next
+          # deploy. The setup screens and the diagnostic both report a data
+          # directory that is web-reachable.
+          #
+          # tests/ is excluded because every file under this path becomes a URL.
+          # api/tests/run.php answered 200 to anyone and ran the whole suite on
+          # each request — printing server paths, and, once the suite grew an
+          # integration fixture, starting a PHP process from an unauthenticated
+          # GET. Both files also refuse to run under a web SAPI now; this
+          # exclude is the half that does not depend on remembering a guard.
           rsync -avz --delete \
             --exclude='.env' \
             --include='.env.example' \
             --exclude='.env.*' \
             --exclude='knowledge.json' \
+            --exclude='data/' \
+            --exclude='tests/' \
             --exclude='.git*' \
             --chmod=D755,F644 \
             -e ssh \
@@ -315,17 +332,54 @@ jobs:
           echo "Deployed server-php to \$REMOTE_ROOT/api/"
           echo "::notice::If this is the first API deploy, create api/.env on the server from server-php/.env.example — it is never uploaded."
 
-      # A deployed API that cannot answer is worth knowing about now rather
-      # than from the app's login screen. /health needs no credentials.
+      # What a smoke check can and cannot establish.
+      #
+      # /health proves the deployment landed and PHP runs. It proves NOTHING
+      # about whether reception can answer a visitor — that needs a credential
+      # from Console, a session secret, and published business information, and
+      # a 200 here is silent on all three.
+      #
+      # So this reads the capability report as well, which is the server's own
+      # account of what it can do, and says plainly which of the two it got.
+      # Neither is proof that a real model request succeeded: only a visitor
+      # asking a question establishes that, and this workflow does not spend a
+      # tenant's budget to find out.
       - name: Smoke-test the deployed API
         run: |
-          url="https://lobby.aicountly.com/api/health"
-          code=$(curl -fsS -o /tmp/health.json -w '%{http_code}' --max-time 20 "$url" || echo "000")
-          if [ "$code" = "200" ]; then
-            echo "GET $url → 200"
-            cat /tmp/health.json
+          base="https://lobby.aicountly.com/api"
+
+          code=$(curl -fsS -o /tmp/health.json -w '%{http_code}' --max-time 20 "$base/health" || echo "000")
+          if [ "$code" != "200" ]; then
+            echo "::warning::GET $base/health returned $code. If this is the first deploy, check that the subdomain's document root is the one in the REMOTE_ROOT secret and that api/.env exists."
+            exit 0
+          fi
+
+          echo "GET $base/health -> 200"
+          cat /tmp/health.json
+          echo ""
+
+          # The capability report is public by design: it is what the interface
+          # reads to tell a visitor the truth before it tries anything. The
+          # operator detail — which variable is unset — needs a role and is not
+          # fetched here.
+          cap=$(curl -fsS --max-time 20 "$base/lobby/capabilities" || echo '')
+          if [ -z "$cap" ]; then
+            echo "::warning::The API is up but $base/lobby/capabilities did not answer. Reception is not usable."
+            exit 0
+          fi
+
+          mode=$(printf '%s' "$cap" | sed -n 's/.*"mode":"\([a-z]*\)".*/\1/p')
+          knowledge=$(printf '%s' "$cap" | grep -o '"knowledge":{"configured":[a-z]*' | sed 's/.*://')
+
+          echo "reception mode: ${mode:-unknown}"
+          echo "approved knowledge configured: ${knowledge:-unknown}"
+
+          if [ "$mode" != "live" ]; then
+            echo "::warning::Reception reports mode=${mode:-unknown}, so it will refuse every visitor. The deployment is fine; a credential is not bound. Run 'php api/tools/check-console-ai.php' on the server to see which piece is missing."
+          elif [ "$knowledge" != "true" ]; then
+            echo "::warning::Reception can answer but has no approved business information, so it will only say it does not know. Publish it under Business setup."
           else
-            echo "::warning::GET $url returned $code. If this is the first deploy, check that the subdomain's document root is the one in PROD_SSH_REMOTE_ROOT and that api/.env exists."
+            echo "::notice::Reception reports it can answer and has published knowledge. This does not prove a model request has succeeded — ask it a question to establish that."
           fi
 
       - name: Clean up SSH credentials

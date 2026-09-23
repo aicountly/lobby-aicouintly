@@ -3,6 +3,18 @@
 declare(strict_types=1);
 
 /**
+ * CLI only — it is started by the test suite with `php -S`.
+ *
+ * Under any other SAPI this file is a URL in a deployed document root, and one
+ * that accepts a service key and writes a state file. It is a test fixture and
+ * has no business answering a request from the internet.
+ */
+if (PHP_SAPI !== 'cli' && PHP_SAPI !== 'cli-server') {
+    http_response_code(404);
+    exit;
+}
+
+/**
  * A stand-in for Aicountly Appointments, for the booking tests.
  *
  *   php -S 127.0.0.1:<port> server-php/tests/fixtures/fake-appointments.php
