@@ -45,7 +45,7 @@ capability report: that says a credential resolved, not that a model answered.
 **Nothing in the "Live-verified" column is a yes, and that is not modesty.**
 `lobby.aicountly.com:443` is refused by this environment's network policy, so
 no part of this phase has been exercised against the deployed host from here.
-Everything marked implemented was verified locally: 76 PHP tests, 98 numeric
+Everything marked implemented was verified locally: 76 PHP tests, 100 numeric
 tests, 23 browser checks, a real 16-process concurrency test, real HTTP against
 a stand-in Appointments, and real `rsync` against a simulated server.
 
@@ -157,7 +157,7 @@ accident while setting up the concurrency test, then pinned with a test.
 | What | Result |
 | --- | --- |
 | PHP tests | 76/76 |
-| Numeric tests | 98/98 |
+| Numeric tests | 100/100 |
 | Browser checks | 23/23 |
 | `npm run build` + `tsc -b` | clean |
 | Concurrent claims, 16 real processes | 1 winner, 15 correctly refused |
@@ -166,7 +166,8 @@ accident while setting up the concurrency test, then pinned with a test.
 | Retry carries the same idempotency key | asserted from what the fixture received |
 | Deploy rsync against a simulated server | `.env`, `knowledge.json`, `data/` survive `--delete`; stale files removed; 0 files under `tests/` sent |
 | Staff routes with a visitor token | 401 on all five, as a bearer and as `X-Lobby-Session` |
-| Mutation tests | draft-as-published fails 2; claim without a holder check fails 1; prompt-only journey gate fails 1; fresh retry key fails 1; reference-less 2xx accepted fails 1 |
+| Lip-sync lead, on a controlled clock | anchored at `onStart`, 700 ms after issue — a 0 ms lead |
+| Mutation tests | draft-as-published fails 2; claim without a holder check fails 1; prompt-only journey gate fails 1; fresh retry key fails 1; reference-less 2xx accepted fails 1; anchoring at issue time fails 2 |
 
 ### Mutation testing, and why it is in this table
 

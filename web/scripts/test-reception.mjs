@@ -1059,6 +1059,64 @@ await asyncTest('the mouth stays closed until the voice actually starts', async 
   convo.dispose()
 })
 
+await asyncTest('the lip-sync lead is measured, not assumed', async () => {
+  // Evidence rather than a boolean. The Phase 2E report said the mouth led the
+  // voice; this puts a number on what the fix is worth, on a controlled clock,
+  // so a regression shows as a figure moving rather than as somebody noticing
+  // on a deployed site.
+  const adapter = fakeAdapter(OK_REPLY)
+  const speaker = fakeVoiceOutput()
+  const { convo, sig, clock } = newConversation(adapter, { voiceOutput: speaker })
+  convo.setVoiceOutput(true)
+  await convo.ask('hello')
+
+  const issuedAt = clock.now()
+  assert.equal(sig.speaking, false, 'nothing may animate during the warm-up')
+
+  // A realistic speechSynthesis warm-up: Chrome commonly takes this long to
+  // pick a voice and produce sound after speak() has already returned.
+  const WARM_UP_MS = 700
+  clock.advance(WARM_UP_MS)
+  speaker.state.handlers.onStart()
+
+  assert.equal(sig.speaking, true, 'the schedule starts with the voice')
+
+  const lead = sig.startedAtMs - issuedAt
+  // Anchoring at issue time instead of at onStart is a lead of exactly the
+  // warm-up: a whole short reply's worth of mouth movement before any sound.
+  assert.equal(
+    lead,
+    WARM_UP_MS,
+    `the schedule must anchor at onStart. Anchored ${lead}ms after issue; anchoring at issue time would put the mouth ${WARM_UP_MS}ms ahead of the voice.`,
+  )
+  assert.equal(sig.offsetMs, 0, 'and it starts at the beginning of the line')
+
+  convo.dispose()
+})
+
+await asyncTest('an engine that never fires onstart still moves the mouth', async () => {
+  // The other half of the same fix. Chrome has long-standing bugs where
+  // onstart never arrives; without a floor the character would talk with a
+  // closed mouth, which is worse than the lead the fix removes.
+  const { readFileSync } = await import('node:fs')
+  const source = readFileSync('src/lobby/reception/conversation.ts', 'utf8')
+
+  assert.ok(
+    /BROWSER_SPEECH_ANCHOR_FALLBACK_MS = (\d+)/.test(source),
+    'a fallback anchor must exist',
+  )
+  const ms = Number(/BROWSER_SPEECH_ANCHOR_FALLBACK_MS = (\d+)/.exec(source)[1])
+  assert.ok(ms >= 600 && ms <= 2000, `the fallback window is ${ms}ms, which is outside a sane range`)
+
+  // It must check that nothing has started before anchoring, or a slow onstart
+  // would anchor twice and jump the mouth mid-reply.
+  const guard = source.split('BROWSER_SPEECH_ANCHOR_FALLBACK_MS)')[0].slice(-400)
+  assert.ok(
+    /signal\.speaking/.test(guard),
+    'the fallback must not fire once the voice has already started',
+  )
+})
+
 await asyncTest('a word boundary re-anchors the mouth without rewinding it', async () => {
   const adapter = fakeAdapter(OK_REPLY)
   const speaker = fakeVoiceOutput()
