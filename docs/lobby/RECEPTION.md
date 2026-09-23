@@ -43,9 +43,10 @@ make and are not true:
 - **The character is not photoreal.** It is a real human model now rather than
   the generated stylised figure — a parametric human from the MakeHuman
   ecosystem, with the full ARKit 52 blendshape set and a proper humanoid
-  skeleton. But it is not a scan and not a sculpt, it arrives in a casual top
-  rather than business dress, and it ships with **no animation clips**: the body
-  is posed in code, which the capability panel says out loud.
+  skeleton. But it is not a scan and not a sculpt, and it ships with **no
+  animation clips**: the body is posed in code, which the capability panel says
+  out loud. It is localised for India in **colour only** — skin, hair and
+  clothing — because the facial geometry cannot be changed without Blender.
   See [ASSETS.md](ASSETS.md) for the licence, the budgets it breaks and what
   reducing it cost.
 - **Where audio goes depends on which engine is configured, and the panel says
@@ -330,6 +331,31 @@ viseme that ever fired climbed to 1 and stayed there. Six pinned at once held
 the mouth permanently open. `composeFacePose` in `faceRig.ts` now clears the
 whole pose, and four tests in `test-reception.mjs` pin it; they fail against the
 old code.
+
+### The mouth starts when the voice does
+
+Reported from the deployed site: *"the lip movement when we approach the
+reception is acting only and the voice follows a second later"*. Exactly right,
+and it was two bugs pulling the same way.
+
+`speechSynthesis.speak()` returns almost immediately, but no sound comes out
+until the engine has picked a voice, warmed up and — on some platforms — fetched
+a cloud voice over the network. The schedule was anchored at the moment of the
+**request**, so the whole of that gap was spent mouthing a line nobody could
+hear yet, and the lips led the voice for the rest of the reply.
+
+The re-timing that exists for exactly this could not rescue it, because
+`onboundary` measured its elapsed time from before `speak()` was called too. It
+was correcting the schedule towards a clock that was itself late.
+
+Both now measure from `onstart`. Until the voice actually starts, `signal.speaking`
+stays false and the mouth stays closed, which is the honest picture: nothing is
+being said. `speechSynthesis` does not always fire `onstart` — Chrome has
+long-standing bugs here — so a 1.2-second floor anchors the schedule anyway
+rather than leaving a character talking with a closed mouth.
+
+The server-audio path never had this problem: it runs on the audio element's own
+`currentTime`, which cannot start before the audio does.
 
 ### The generated fallback
 

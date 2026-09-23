@@ -225,6 +225,15 @@ export interface ReceptionConversation {
   dispose(): void
 }
 
+/**
+ * How long to wait for `onstart` before animating the mouth regardless.
+ *
+ * Long enough that a normal engine warm-up anchors on the real event, short
+ * enough that a browser which never fires it does not leave the character
+ * silent-mouthed for a whole reply.
+ */
+const BROWSER_SPEECH_ANCHOR_FALLBACK_MS = 1200
+
 const DEFAULT_OPENING =
   'Hello, and welcome to Aicountly. Ask me about opening hours, booking an appointment, or what Aicountly does.'
 
@@ -379,17 +388,30 @@ export function createReceptionConversation(options: ConversationOptions): Recep
       token.onRelease(() => clearTimer(handle))
     }
 
-    /** The browser's own voice: no audio to analyse, so the schedule is estimated. */
+    /**
+     * The browser's own voice: no audio to analyse, so the schedule is estimated.
+     *
+     * The schedule is anchored in `onStart`, **not** here. `speechSynthesis.speak()`
+     * returns long before any sound comes out — the engine has to pick a voice,
+     * warm up, and on some platforms fetch a cloud voice over the network. That
+     * gap is hundreds of milliseconds to well over a second, and anchoring at
+     * the moment of the request spends all of it mouthing a line nobody can
+     * hear yet, so the lips lead the voice for the whole reply.
+     *
+     * Until the voice actually starts, `signal.speaking` stays false and the
+     * mouth stays closed, which is the honest picture: nothing is being said.
+     */
     const speakInBrowser = (): boolean => {
       if (!outputEnabled || !voiceOutput) return false
 
       signal.lipSync = modeForReply()
       const timeline = signal.lipSync === 'text-estimated' ? visemeTimeline(text) : []
-      beginSpeaking(signal, timeline, now())
 
       const started = voiceOutput.speak(text, {
         onStart: () => {
-          if (token.isCurrent()) setAudio('playing')
+          if (!token.isCurrent()) return
+          beginSpeaking(signal, timeline, now())
+          setAudio('playing')
           emit()
         },
         onBoundary: (charIndex, elapsedMs) => {
@@ -403,6 +425,18 @@ export function createReceptionConversation(options: ConversationOptions): Recep
         endSpeaking(signal)
         return false
       }
+
+      // speechSynthesis does not always fire onstart — Chrome in particular has
+      // long-standing bugs here. Without a floor, a missing event would leave
+      // the character talking with a closed mouth, which is worse than the lead
+      // this change removes. So if nothing has started within the window, the
+      // schedule anchors anyway and behaves as it used to.
+      const anchorFallback = setTimer(() => {
+        if (!token.isCurrent() || signal.speaking) return
+        beginSpeaking(signal, timeline, now())
+        emit()
+      }, BROWSER_SPEECH_ANCHOR_FALLBACK_MS)
+      token.onRelease(() => clearTimer(anchorFallback))
 
       speechSource = 'browser'
       setAudio('requested')
