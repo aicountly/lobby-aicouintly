@@ -37,22 +37,29 @@ import type { Object3D } from 'three'
 
 import type { ReceptionistClip } from '../assets/assetConfig'
 
-/** Mixamo names, with and without the common `mixamorig` prefix. */
+/**
+ * Bone names, per convention, most specific first.
+ *
+ * Two are supported because the two characters that have been through here use
+ * different ones: MakeHuman exports Mixamo names, and Microsoft RocketBox
+ * exports 3ds Max Biped names (`Bip01_*`). A rig using neither reports
+ * `usable: false` and is left in its bind pose rather than half-posed.
+ */
 const BONES = {
-  hips: ['Hips'],
-  spine: ['Spine'],
-  chest: ['Spine1'],
-  upperChest: ['Spine2'],
-  neck: ['Neck'],
-  head: ['Head'],
-  leftArm: ['LeftArm'],
-  leftForeArm: ['LeftForeArm'],
-  leftHand: ['LeftHand'],
-  rightArm: ['RightArm'],
-  rightForeArm: ['RightForeArm'],
-  rightHand: ['RightHand'],
-  leftShoulder: ['LeftShoulder'],
-  rightShoulder: ['RightShoulder'],
+  hips: ['Hips', 'Bip01_Pelvis'],
+  spine: ['Spine', 'Bip01_Spine'],
+  chest: ['Spine1', 'Bip01_Spine1'],
+  upperChest: ['Spine2', 'Bip01_Spine2'],
+  neck: ['Neck', 'Bip01_Neck'],
+  head: ['Head', 'Bip01_Head'],
+  leftArm: ['LeftArm', 'Bip01_L_UpperArm'],
+  leftForeArm: ['LeftForeArm', 'Bip01_L_Forearm'],
+  leftHand: ['LeftHand', 'Bip01_L_Hand'],
+  rightArm: ['RightArm', 'Bip01_R_UpperArm'],
+  rightForeArm: ['RightForeArm', 'Bip01_R_Forearm'],
+  rightHand: ['RightHand', 'Bip01_R_Hand'],
+  leftShoulder: ['LeftShoulder', 'Bip01_L_Clavicle'],
+  rightShoulder: ['RightShoulder', 'Bip01_R_Clavicle'],
 } as const
 
 type BoneKey = keyof typeof BONES
@@ -70,42 +77,71 @@ export interface SkeletonPoser {
   /** False when the rig is not one this can drive; the caller then leaves it alone. */
   readonly usable: boolean
   readonly found: readonly BoneKey[]
+  /** Which naming convention was recognised, for the capability report. */
+  readonly convention: 'mixamo' | 'biped'
   apply(input: SkeletonPoseInput): void
 }
 
 /**
- * Arms down, measured rather than guessed.
+ * Arms down, measured per rig rather than guessed once.
  *
- * Two things were wrong the first time and both are worth recording, because
- * they are the traps in posing any supplied rig:
+ * Two traps, both of which cost real time and are why these numbers came from
+ * loading each file and reading world positions off it:
  *
- *   1. **This bind pose is not a T-pose.** Loading the rig and reading world
- *      positions off it says the hands already sit at y=1.08 on a 1.78 m
- *      figure — hip height — splayed out at x=+/-0.48. It needs bringing IN,
- *      not DOWN, and an abduction rotation sized for a T-pose swings the arms
- *      back out to horizontal.
+ *   1. **Neither bind pose is a T-pose.** Both rigs park the hands at about hip
+ *      height already, splayed out at x=+/-0.5. They need bringing IN, not
+ *      DOWN, and an abduction sized for a T-pose swings the arms back out.
  *
- *   2. **Rotations here are in the bone's local space, not the world's.** A
- *      shoulder's local axes do not line up with the room's, so "rotate about Z
- *      to abduct" is only true of a rig whose bones happen to be aligned that
- *      way. On this one the axis that brings a hand in to the hip is local
- *      **X**, and with the SAME sign on both arms, because the mirrored bones
- *      carry mirrored axes with them.
+ *   2. **Rotations apply in the BONE's local space, and the two conventions do
+ *      not agree on which axis that is.** MakeHuman/Mixamo settles an arm about
+ *      local X with the SAME sign on both sides; RocketBox/Biped settles it
+ *      about local Y with MIRRORED signs. Using one rig's numbers on the other
+ *      raises an arm over the character's head.
  *
- * So the numbers below came from loading the file and measuring where the hand
- * ends up, not from reasoning about anatomy:
+ * Measured, left hand, from the bind pose at x=0.52 y=1.06:
  *
- *   local X   left hand        right hand
- *   0.00      x=0.44 y=1.04    x=-0.44 y=1.04    splayed, the bind pose
- *   0.55      x=0.21 y=0.95    x=-0.21 y=0.95    hanging at the hip
- *   0.95      x=0.04 y=0.97    x=-0.04 y=0.97    crossed in front, too close
+ *   Biped   local Y +1.0  -> x=0.10 y=0.92   in and down (too far in at 1.0)
+ *   Biped   local Y -1.0  -> x=0.63 y=1.50   raised, which is the wave
+ *   Mixamo  local X +0.55 -> x=0.21 y=0.95   in and down
  */
-const ARM_REST_X = 0.58
+interface RigProfile {
+  /** Which local axis abducts the upper arm. */
+  readonly armAxis: 'x' | 'y' | 'z'
+  readonly leftRest: number
+  readonly rightRest: number
+  /** Absolute upper-arm angle for a wave. */
+  readonly rightWave: number
+  readonly foreArmAxis: 'x' | 'y' | 'z'
+  readonly foreArmBend: number
+  /** Bending the forearm is what lifts the hand beside the head. */
+  readonly waveForeArmAxis: 'x' | 'y' | 'z'
+  readonly waveForeArmBend: number
+  /** The side-to-side of the wave itself. */
+  readonly waveSwingAxis: 'x' | 'y' | 'z'
+}
 
-/** Raises the waving hand to y=1.62, level with the head, from ARM_REST_X. */
-const WAVE_RAISE = 1.6
-
-const FOREARM_BEND = 0.25
+/**
+ * Wave angles, measured against this rig rather than guessed.
+ *
+ * Head at y=1.52, shoulder at 1.38. Abducting the upper arm alone raises the
+ * hand to shoulder height and leaves it pointing straight out sideways, which
+ * reads as "stop", not "hello". The forearm bend is what brings it up:
+ *
+ *   armY 1.05 alone        -> hand y=1.50, x=-0.62   straight out
+ *   armY 1.05 + foreY 1.2  -> hand y=1.68, x=-0.41   beside the head
+ */
+const PROFILES: Record<'mixamo' | 'biped', RigProfile> = {
+  mixamo: {
+    armAxis: 'x', leftRest: 0.58, rightRest: 0.58, rightWave: -1.02,
+    foreArmAxis: 'x', foreArmBend: 0.25,
+    waveForeArmAxis: 'x', waveForeArmBend: -0.6, waveSwingAxis: 'y',
+  },
+  biped: {
+    armAxis: 'y', leftRest: 0.72, rightRest: -0.72, rightWave: 1.05,
+    foreArmAxis: 'y', foreArmBend: -0.18,
+    waveForeArmAxis: 'y', waveForeArmBend: 1.2, waveSwingAxis: 'z',
+  },
+}
 
 const IDENTITY = new Quaternion()
 
@@ -139,6 +175,10 @@ export function createSkeletonPoser(root: Object3D): SkeletonPoser {
   // would look worse than leaving it in bind.
   const usable = Boolean(bones.leftArm && bones.rightArm)
 
+  // Which convention this rig follows decides the axis and the signs.
+  const convention: 'mixamo' | 'biped' = bones.leftArm?.name.startsWith('Bip01') ? 'biped' : 'mixamo'
+  const profile = PROFILES[convention]
+
   const euler = new Euler()
   const scratch = new Quaternion()
 
@@ -150,9 +190,15 @@ export function createSkeletonPoser(root: Object3D): SkeletonPoser {
     bone.quaternion.copy(rest[key] ?? IDENTITY).multiply(scratch)
   }
 
+  /** Rotate a bone by one angle on whichever axis this rig uses. */
+  function setOnAxis(key: BoneKey, axis: 'x' | 'y' | 'z', angle: number): void {
+    set(key, axis === 'x' ? angle : 0, axis === 'y' ? angle : 0, axis === 'z' ? angle : 0)
+  }
+
   return {
     usable,
     found,
+    convention,
     apply({ role, roleElapsed, time, reducedMotion }: SkeletonPoseInput): void {
       if (!usable) return
 
@@ -164,7 +210,7 @@ export function createSkeletonPoser(root: Object3D): SkeletonPoser {
       set('chest', breath * 0.016, sway * 0.008, 0)
       set('upperChest', breath * 0.01, 0, 0)
 
-      let rightArmX = ARM_REST_X
+      let rightArm = profile.rightRest
       let rightForeArmPosed = false
 
       // --- Greeting: the right arm goes up and the forearm waves. -----------
@@ -176,16 +222,21 @@ export function createSkeletonPoser(root: Object3D): SkeletonPoser {
       if (role === 'greet' || role === 'gesture') {
         const t = Math.min(roleElapsed / 0.45, 1)
         const ease = t * t * (3 - 2 * t)
-        rightArmX = ARM_REST_X - ease * (role === 'greet' ? WAVE_RAISE : WAVE_RAISE * 0.55)
-        const wave = reducedMotion ? 0 : Math.sin(roleElapsed * 9.5) * 0.4 * ease
-        set('rightForeArm', -0.6 * ease + FOREARM_BEND * (1 - ease), wave, 0)
+        const raised = role === 'greet' ? profile.rightWave : (profile.rightRest + profile.rightWave) / 2
+        rightArm = profile.rightRest + (raised - profile.rightRest) * ease
+        const swing = reducedMotion ? 0 : Math.sin(roleElapsed * 9.5) * 0.35 * ease
+        const bend = profile.foreArmBend + (profile.waveForeArmBend - profile.foreArmBend) * ease
+        const angles = { x: 0, y: 0, z: 0 }
+        angles[profile.waveForeArmAxis] = bend
+        angles[profile.waveSwingAxis] += swing
+        set('rightForeArm', angles.x, angles.y, angles.z)
         rightForeArmPosed = true
       }
 
-      set('leftArm', ARM_REST_X, 0, 0)
-      set('rightArm', rightArmX, 0, 0)
-      set('leftForeArm', FOREARM_BEND, 0, 0)
-      if (!rightForeArmPosed) set('rightForeArm', FOREARM_BEND, 0, 0)
+      setOnAxis('leftArm', profile.armAxis, profile.leftRest)
+      setOnAxis('rightArm', profile.armAxis, rightArm)
+      setOnAxis('leftForeArm', profile.foreArmAxis, profile.foreArmBend)
+      if (!rightForeArmPosed) setOnAxis('rightForeArm', profile.foreArmAxis, profile.foreArmBend)
 
       // --- Head: a small settle, and a glance while listening. --------------
       const listening = role === 'listen'

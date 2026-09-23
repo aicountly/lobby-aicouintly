@@ -1059,6 +1059,106 @@ await asyncTest('the mouth stays closed until the voice actually starts', async 
   convo.dispose()
 })
 
+await asyncTest('the journey offered comes from what reception proposed', async () => {
+  const { shortcutForReply } = conversation
+
+  // The backend validates every action against an allowlist and drops any
+  // whose journey the business switched off. Using its answer is what makes
+  // that gating mean anything to a visitor.
+  assert.equal(
+    shortcutForReply([{ name: 'request_handover' }], 'what are your opening hours')?.key,
+    'handover',
+    'the proposed action wins over the words the visitor used',
+  )
+  assert.equal(shortcutForReply([{ name: 'offer_booking' }], 'hello')?.key, 'booking')
+  assert.equal(shortcutForReply([{ name: 'offer_enquiry' }], 'hello')?.key, 'enquiry')
+
+  // An action the allowlist does not know is not a journey.
+  assert.equal(shortcutForReply([{ name: 'transfer_funds' }], 'hello'), null)
+
+  // No action proposed falls back to the keyword match, which is what the
+  // demonstration adapter relies on — it has no actions to propose.
+  assert.equal(shortcutForReply([], 'I would like to book an appointment')?.key, 'booking')
+  assert.equal(shortcutForReply(undefined, 'can I speak to a person')?.key, 'handover')
+})
+
+await asyncTest('asking for a person does not open the question panel', async () => {
+  // The regression this ordering exists to prevent: "speak to" contains no
+  // handover keyword under the old patterns, but "ask"/"help" match 'team',
+  // so asking for a human opened another text box.
+  const { detectShortcut } = conversation
+
+  for (const question of [
+    'can I speak to a person',
+    'I want to talk to someone',
+    'is there a real person there',
+    'can I ask a human for help',
+  ]) {
+    assert.equal(detectShortcut(question)?.key, 'handover', `"${question}" must reach the queue`)
+  }
+
+  // And a plain question still does not.
+  assert.equal(detectShortcut('I have a question about parking')?.key, 'team')
+})
+
+await asyncTest('the lip-sync lead is measured, not assumed', async () => {
+  // Evidence rather than a boolean. The Phase 2E report said the mouth led the
+  // voice; this puts a number on what the fix is worth, on a controlled clock,
+  // so a regression shows as a figure moving rather than as somebody noticing
+  // on a deployed site.
+  const adapter = fakeAdapter(OK_REPLY)
+  const speaker = fakeVoiceOutput()
+  const { convo, sig, clock } = newConversation(adapter, { voiceOutput: speaker })
+  convo.setVoiceOutput(true)
+  await convo.ask('hello')
+
+  const issuedAt = clock.now()
+  assert.equal(sig.speaking, false, 'nothing may animate during the warm-up')
+
+  // A realistic speechSynthesis warm-up: Chrome commonly takes this long to
+  // pick a voice and produce sound after speak() has already returned.
+  const WARM_UP_MS = 700
+  clock.advance(WARM_UP_MS)
+  speaker.state.handlers.onStart()
+
+  assert.equal(sig.speaking, true, 'the schedule starts with the voice')
+
+  const lead = sig.startedAtMs - issuedAt
+  // Anchoring at issue time instead of at onStart is a lead of exactly the
+  // warm-up: a whole short reply's worth of mouth movement before any sound.
+  assert.equal(
+    lead,
+    WARM_UP_MS,
+    `the schedule must anchor at onStart. Anchored ${lead}ms after issue; anchoring at issue time would put the mouth ${WARM_UP_MS}ms ahead of the voice.`,
+  )
+  assert.equal(sig.offsetMs, 0, 'and it starts at the beginning of the line')
+
+  convo.dispose()
+})
+
+await asyncTest('an engine that never fires onstart still moves the mouth', async () => {
+  // The other half of the same fix. Chrome has long-standing bugs where
+  // onstart never arrives; without a floor the character would talk with a
+  // closed mouth, which is worse than the lead the fix removes.
+  const { readFileSync } = await import('node:fs')
+  const source = readFileSync('src/lobby/reception/conversation.ts', 'utf8')
+
+  assert.ok(
+    /BROWSER_SPEECH_ANCHOR_FALLBACK_MS = (\d+)/.test(source),
+    'a fallback anchor must exist',
+  )
+  const ms = Number(/BROWSER_SPEECH_ANCHOR_FALLBACK_MS = (\d+)/.exec(source)[1])
+  assert.ok(ms >= 600 && ms <= 2000, `the fallback window is ${ms}ms, which is outside a sane range`)
+
+  // It must check that nothing has started before anchoring, or a slow onstart
+  // would anchor twice and jump the mouth mid-reply.
+  const guard = source.split('BROWSER_SPEECH_ANCHOR_FALLBACK_MS)')[0].slice(-400)
+  assert.ok(
+    /signal\.speaking/.test(guard),
+    'the fallback must not fire once the voice has already started',
+  )
+})
+
 await asyncTest('a word boundary re-anchors the mouth without rewinding it', async () => {
   const adapter = fakeAdapter(OK_REPLY)
   const speaker = fakeVoiceOutput()
@@ -1574,6 +1674,91 @@ await asyncTest('speech never starts itself', async () => {
     assert.equal(scratch.mouthSmileLeft, 0, 'and clears when the state no longer asks for it')
   })
 }
+
+
+// ---------------------------------------------------------------------------
+// Phase 3 — the handover journey, and what a demonstration may claim
+// ---------------------------------------------------------------------------
+
+await asyncTest('the demonstration never shows a queue position or a wait', async () => {
+  const { demoAdapter } = await load('/src/lobby/services/demoAdapter.ts')
+
+  const asked = await demoAdapter.requestHandover('Asha', 'Delivery')
+  assert.equal(asked.status, 'ok')
+  assert.equal(asked.data.demo, true, 'it must be labelled a demonstration')
+  assert.equal(asked.data.state, 'requested', 'and must not claim to have been queued')
+  assert.equal(asked.data.ahead, 0, 'a demo must never invent a position')
+  assert.equal(asked.data.staffed, false, 'and must never claim somebody is there')
+  assert.ok(
+    /nobody was alerted/i.test(asked.data.message),
+    'the sentence must say plainly that nobody was alerted',
+  )
+})
+
+await asyncTest('the live handover reports only what the server recorded', async () => {
+  const { readFileSync } = await import('node:fs')
+  const live = readFileSync('src/lobby/services/liveAdapter.ts', 'utf8')
+
+  // Each of the three handover methods must return unavailable on failure
+  // rather than a status object. A fabricated position here is the failure
+  // this whole product is shaped around avoiding, and it would be one line.
+  for (const method of ['requestHandover', 'handoverStatus', 'cancelHandover']) {
+    const body = live.split(`async ${method}(`)[1]?.split('\n  },')[0] ?? ''
+    assert.ok(body, `${method} must exist in the live adapter`)
+    assert.ok(
+      /if \(!result\.ok\) return unavailable\(/.test(body),
+      `${method} must report unavailable on failure, not a status`,
+    )
+    assert.ok(/demo: false/.test(body), `${method} must never mark a live result as a demonstration`)
+  }
+})
+
+await asyncTest('a journey the business switched off is not offered to a visitor', async () => {
+  const { readFileSync } = await import('node:fs')
+  const centre = readFileSync('src/lobby/ui/ServiceCentre.tsx', 'utf8')
+
+  assert.ok(/function offered\(/.test(centre), 'the service list must be filtered')
+  assert.ok(
+    /journeys\.booking/.test(centre) && /journeys\.handover/.test(centre),
+    'booking and handover must both be gated on the published configuration',
+  )
+  assert.ok(
+    /\{visible\.map\(/.test(centre) && !/\{SERVICES\.map\(/.test(centre),
+    'the filtered list must be the one rendered',
+  )
+})
+
+await asyncTest('the staff surface is not in the bundle a visitor downloads', async () => {
+  const { readFileSync } = await import('node:fs')
+  const app = readFileSync('src/App.tsx', 'utf8')
+
+  assert.ok(
+    /lazy\(\(\) => import\('\.\/admin\/AdminShell'\)/.test(app),
+    'AdminShell must be loaded lazily, not bundled into the entry chunk',
+  )
+  assert.ok(
+    !/^import \{ AdminShell \}/m.test(app),
+    'and must not also be imported statically',
+  )
+})
+
+await asyncTest('no staff route is reachable without the portal bearer token', async () => {
+  const { readFileSync } = await import('node:fs')
+  const api = readFileSync('src/admin/adminApi.ts', 'utf8')
+
+  assert.ok(/getSesKey\(\)/.test(api), 'the admin client must read the portal session key')
+  assert.ok(
+    /authorization: `Bearer \$\{token\}`/.test(api),
+    'and must send it as a bearer token',
+  )
+  // The visitor session header must not appear anywhere in the staff client.
+  // The two credentials are separate on the server; a browser that sent both
+  // would be the first step towards them not being.
+  assert.ok(
+    !/x-lobby-session/i.test(api),
+    'the staff client must never send the anonymous visitor session token',
+  )
+})
 
 // ---------------------------------------------------------------------------
 

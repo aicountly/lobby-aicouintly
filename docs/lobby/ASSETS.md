@@ -82,135 +82,127 @@ A visitor is a cylinder of radius **0.38 m** with eyes at **1.65 m**.
 
 ### What is shipped
 
-**A real human character.** `web/public/lobby-assets/receptionist.glb` — 5.7 MB,
-83,686 triangles, a 67-bone Mixamo-named humanoid skeleton, and the **full ARKit
-52 blendshape set** with 11 of the 15 OVR visemes native. The remaining four
-come from `VISEME_TO_ARKIT` at runtime.
-
-It is **not photoreal**, and nobody should say it is. It is a parametric human
-from the MakeHuman ecosystem: realistic proportions, real skin, eye and hair
-textures, and a face that holds an expression — but not a scan and not a sculpt.
-
-#### Localised for India, in colour only
-
-Aicountly sells in India and the lobby is the first thing a prospect sees, so
-the receptionist should not read as European. `build-character.mjs` shifts the
-skin tone, darkens the hair to near-black, and replaces the source's casual
-printed tee with a flat maroon top — which also takes the printed logo with it,
-since the normal map survives and keeps the fabric creasing.
-
-**This changes colour, not bone structure, and the limit is real.** The face
-geometry is the same parametric MakeHuman head. At counter distance the
-colouring carries it; in close-up the features are not specifically South Asian.
-Fixing that properly means applying MakeHuman's own ethnic morphs before export,
-which needs Blender — so it belongs in a replacement asset rather than in this
-pipeline.
-
-No South Asian MakeHuman skin was reachable from this build environment: the
-realistic skins ship in a separate asset download, not in any git repository
-fetchable here. `makehumancommunity/makehuman` is reachable and its assets are
-CC0, but the skins directory in it carries no diffuse textures.
-
-The transform values were chosen by rendering rather than by theory — a modest
-darkening disappears under the lobby's bright lighting, so the shift has to be
-stronger in texture space than it looks on its own.
-
-It replaced the generated stylised figure described in RELEASE-2A-2B.md. That
-figure is still in the repository and still mounts whenever no model is
-supplied, so a fresh clone with no `.glb` renders a complete room exactly as
-before.
-
-#### Where it came from, and the licence that decided it
-
-| | |
-| --- | --- |
-| Source | `mpfb.glb` from [met4citizen/TalkingHead](https://github.com/met4citizen/TalkingHead) |
-| Built with | Blender + [MPFB](https://static.makehumancommunity.org/mpfb.html), from MakeHuman assets |
-| Licence | **CC0** — public domain |
-| Why it matters | Lobby is served as static files, so the `.glb` is downloadable by anyone who visits. CC0 permits that, commercially. |
-
-The same repository's better-known `brunette.glb` is a Ready Player Me avatar
-and is **CC BY-NC 4.0**. It is the more polished character, and it was rejected
-without further consideration: Aicountly Lobby is a commercial product's front
-door, and non-commercial is not a licence it can use. `avatar.glb`,
-`avatarsdk.glb` and `vroid.glb` in that repository are non-commercial too.
-
-#### What the discovery pass found this time
-
-Egress is unchanged from the earlier pass — Poly Haven, Ready Player Me, Mixamo,
-Meshy and Sketchfab all still refuse the CONNECT, and `raw.githubusercontent.com`
-is still the only route to any asset. The difference is that the earlier pass
-concluded from two files on that host (RobotExpressive, CesiumMan) that no
-usable human was reachable. That conclusion was too quick: a CC0 human with the
-complete ARKit set was one directory away.
-
-#### Budgets, and where this file breaks them
-
-Stated rather than quietly waived:
+**Microsoft RocketBox `Business_Female_01`**, converted to
+`web/public/lobby-assets/receptionist.glb`. 3.9 MB, 8,966 triangles, three
+materials, an 80-bone 3ds Max Biped skeleton, **all 52 ARKit blendshapes and all
+15 OVR visemes**.
 
 | | Asked for | Shipped | |
 | --- | --- | --- | --- |
-| Triangles | ≤ 60k | **83,686** | **Over.** 43k of it is eyelashes and eyebrows, which are alpha-mapped hair cards a quadric simplifier tears apart at the silhouette. |
-| Materials | ≤ 4 | **7** | **Over.** Body, clothing, eyes, brows/lashes, teeth, tongue, hair. |
-| Textures | ≤ 2048² | 2048² face, 1024² rest | Within. |
-| Format | single `.glb` | single `.glb` | Within. |
-| Height | 1.6–1.9 m | 1.783 m | Within. |
-| Bones | ≤ 80 | 67 | Within. |
-| `idle` clip | **required** | **none** | **Missing.** See below. |
+| Format | single `.glb` | single `.glb` | ok |
+| Triangles | ≤ 60k | **8,966** | ok |
+| Materials | ≤ 4 | **3** | ok |
+| Bones | ≤ 80 | **80** | ok |
+| Textures | ≤ 2048² | 2048² head, 1024² body and hair | ok |
+| Height | 1.6–1.9 m | 1.740 m | ok |
+| Facing | +Z | +Z | ok |
+| Origin | floor, between the feet | y = 0 | ok |
+| ARKit 52 | all 52 | **52 / 52** | ok |
+| OVR visemes | all 15 | **15 / 15** | ok |
+| `idle` clip | **required** | **none** | **missing — posed in code** |
+
+Every budget in this document is met except the animation clips. It replaced the MakeHuman figure, which
+stays available in git history rather than as a second committed file — a
+duplicate in `public/` would be rsynced to every deploy's document root as
+5.8 MB of dead weight.
+
+#### Licence
+
+MIT, from [microsoft/Microsoft-Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox)
+— 115 rigged human avatars, with ARKit blendshapes contributed in 2022. MIT
+permits redistribution in a public web bundle, which matters: the lobby is
+served as static files and anyone can download the `.glb`.
+
+#### How far it is from the approved reference
+
+The approved reference is a specific AI-generated likeness. **This is a
+different woman**, and no part of this document should be read as claiming
+otherwise. Against the reference:
+
+| | Reference | Shipped | |
+| --- | --- | --- | --- |
+| Build, attire | Tailored trouser suit, blouse, low heels | Tailored trouser suit, blouse, low heels | matches |
+| Complexion | Fair warm | Warm medium | close |
+| Eyes | Brown | Brown | matches |
+| Suit colour | Deep emerald | **Charcoal** | **differs** |
+| Hair | Long, dark, half-up, behind the shoulders | **Short, dark, tucked back** | **differs** |
+| Badge | AICOUNTLY / AI Receptionist | **none** | **missing** |
+| Earrings | Small gold studs | none | differs |
+| Face | A specific likeness | A different woman | **differs** |
+
+**The emerald recolour was attempted and reverted.** RocketBox packs the suit,
+the skin and the blouse into one texture atlas, so no luminance-and-chroma rule
+separates them: skin in shadow is also dark and desaturated, and the hands and
+lower legs turned green while parts of the trousers stayed skin-toned. It was
+rendered in the preview harness, looked wrong, and was removed rather than
+shipped. Doing it properly needs a UV region mask authored per model.
+
+Hair length, the badge and the face itself cannot be changed by texture work at
+all — they are geometry, and changing them needs a modelling tool.
+
+#### The conversion
+
+`scripts/build-rocketbox-character.mjs` is the recipe, and running it against
+the source FBX reproduces the shipped file. It is not a one-off: the source is
+FBX at 3ds Max scale with 175 blendshapes, and five things have to happen.
+
+1. **Centimetres to metres.** The avatar is 174 units tall; the lobby is metric.
+2. **Morph names normalised.** They arrive as `blendShape1.AK_25_JawOpen` and
+   `blendShape1.AA_VI_10_aa`. The lobby drives plain ARKit names and `viseme_*`,
+   so prefixes are stripped — and four visemes are *renamed*, because RocketBox
+   spells them `KK`, `I`, `O`, `U` where the Oculus set the lobby drives uses
+   `kk`, `ih`, `oh`, `ou`. Leaving them would silently lose four shapes.
+3. **108 unused targets dropped**: the Vive facial-tracker set and a FACS set
+   that nothing drives. Every target costs a dense array at load time.
+4. **UV V-flip.** FBX and glTF disagree about which end of the texture V=0 is.
+   three's FBXLoader compensates with `flipY` on the textures it creates, and
+   those are stripped before export — so without this the legs sample the hands
+   at the top of the body atlas and **the mouth renders on the throat**. It is
+   not subtle, and the preview harness is what caught it.
+5. **Geometry welded.** The FBX is non-indexed — 8,966 triangles written as
+   26,898 separate vertices — so every morph target stored three copies of each
+   shared vertex. Indexing took the file from 19 MB to 3.9 MB.
+
+Textures convert from 12–16 MB uncompressed TGA to WebP: 43 KB body, 502 KB
+head, 321 KB hair.
+
+`receptionist.mapping.json` ships beside the model and records every rename,
+with the target mesh, the source name, the influence range and the neutral
+value.
 
 #### No clips, so the body is posed in code
 
-The file has zero animation clips, and `idle` is the one clip the requirements
-below call mandatory. Authoring clips would have meant Blender or Mixamo,
-neither available here.
+The file has zero animation clips, and `idle` is the one clip this document
+calls mandatory. `src/lobby/reception/skeletonPoser.ts` settles the arms against
+the body, breathes, sways, glances and waves, driven by the same controller an
+authored character would use.
 
-What it does have is a standard humanoid skeleton with Mixamo naming, which is
-enough to pose in code — which is what the lobby already does for its own
-generated figure. `src/lobby/reception/skeletonPoser.ts` settles the arms
-against the body, breathes, sways, glances and waves, driven by the same
-controller and the same state machine an authored character would use. The
-capability panel says `body posed in code` rather than letting `0/8 animation
-roles` read as a character standing frozen.
+It now carries **two naming conventions** — Mixamo (MakeHuman) and Biped
+(RocketBox) — because the two are not interchangeable in a way that matters:
+MakeHuman settles an arm about the bone's local **X** with the same sign on both
+sides, RocketBox about local **Y** with mirrored signs. Using one rig's numbers
+on the other raises an arm over the character's head. Every angle in that file
+came from loading the model and reading world positions off it.
 
-A replacement that ships real clips is still better, and the requirements below
-still ask for them. `rolesProvided` being non-empty switches the poser off.
+#### Performance, measured under identical conditions
 
-#### How the file was reduced, and what that cost
+Both characters in the same scene, same viewport, same renderer:
 
-`scripts/build-character.mjs` takes the 35.1 MB source to 5.7 MB and is the
-recipe for the committed binary — run it against the source and you get the
-shipped file back. Three cuts, in order of saving:
+| | MakeHuman | RocketBox |
+| --- | --- | --- |
+| Scene triangles | 197,382 | **47,942** |
+| Character triangles | 83,686 | **8,966** |
+| Character draw calls | 8 | **7** |
+| Scene draw calls | 213 | 211 |
+| Shader programs | 39 | **29** |
+| Download | 5.71 MB | **3.89 MB** |
+| Bones | 67 | 80 |
+| Morph influence slots | 100 | 469 |
 
-1. **Textures resized and re-encoded to WebP.** 18.5 MB → 0.8 MB.
-2. **Morph NORMAL deltas dropped** — exactly half the morph payload. The
-   POSITION deltas carry the shape; the normals only change how light moves
-   across the face as it deforms. **This is a real loss, not a free one.** Under
-   the lobby's soft even lighting at counter distance it is not one anybody
-   sees, but it is written down here rather than called free.
-3. **Morphs removed from meshes they cannot move.** MakeHuman writes all 52
-   shapes onto every mesh, so the eyelashes carried `jawOpen` and the eyebrows
-   carried `mouthSmile`. Lashes and brows keep the eye, brow, nose and cheek
-   shapes — a lash must still follow a blink — and lose the rest.
-
-Two things were measured and rejected. **Draco** gives 6.21 MB against 7.94 MB
-raw, but the server gzips: 3.72 MB against 4.56 MB on the wire, and a ~200 KB
-decoder fetch that blocks the character appearing eats most of that.
-**KHR_mesh_quantization** is worse than useless here at 13.6 MB — it
-de-sparsifies the morph accessors, and sparse is already the efficient shape for
-mostly-zero deltas.
-
-#### Load cost
-
-Measured in this build environment, which is **software-rendered on shared
-infrastructure and is not a hardware benchmark**: importing the code-split
-GLTFLoader chunk 4.2 s, fetching 5.7 MB over localhost 1.5 s, parsing 2.2 s. The
-import figure in particular is an artefact of a busy single main thread and
-should be far smaller on a real device; none of these numbers should be quoted
-as what a visitor experiences.
-
-What matters structurally is that the generated character mounts immediately and
-the supplied one replaces it when ready, so the room is never empty and never
-blocks on the download.
+Morph slots go up because the mesh exports as seven primitives, each carrying
+the 67 targets. **These are software-rendered figures and not a hardware
+benchmark** — they are counts, which are hardware-independent; frame timing from
+this environment is not quoted because it would mean nothing.
 
 ### Requirements for a replacement
 

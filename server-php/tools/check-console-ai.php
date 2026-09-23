@@ -18,8 +18,11 @@ declare(strict_types=1);
 
 namespace Aicountly\Api;
 
+use Aicountly\Api\Access\StaffSession;
 use Aicountly\Api\Ai\ConsoleCredentials;
+use Aicountly\Api\Config\ConfigStore;
 use Aicountly\Api\Provider\AnthropicConversation;
+use Aicountly\Api\Store\FileRepository;
 
 if (PHP_SAPI !== 'cli') {
     http_response_code(404);
@@ -34,7 +37,15 @@ require $root . '/src/Http.php';
 require $root . '/src/Json.php';
 require $root . '/src/RateLimit.php';
 require $root . '/src/VisitorSession.php';
+require $root . '/src/Store/Repository.php';
+require $root . '/src/Store/Record.php';
+require $root . '/src/Store/StoreException.php';
+require $root . '/src/Store/FileRepository.php';
+require $root . '/src/Config/Schema.php';
+require $root . '/src/Config/ConfigStore.php';
 require $root . '/src/Knowledge.php';
+require $root . '/src/Access/Role.php';
+require $root . '/src/Access/StaffSession.php';
 require $root . '/src/Ai/ConsoleCredentials.php';
 require $root . '/src/Provider/Contracts.php';
 require $root . '/src/Provider/AnthropicConversation.php';
@@ -85,11 +96,62 @@ line(VisitorSession::configured(), 'Visitor sessions', VisitorSession::configure
     ? 'LOBBY_SESSION_SECRET is set and long enough'
     : 'LOBBY_SESSION_SECRET is unset or shorter than 32 characters');
 
-$knowledge = Knowledge::summary();
-$sections = is_array($knowledge['sections'] ?? null) ? $knowledge['sections'] : [];
-line((bool) $knowledge['configured'], 'Approved knowledge', $knowledge['configured']
-    ? count($sections) . ' section(s) — ' . implode(', ', $sections)
-    : 'no readable file at ' . Knowledge::path());
+// --- Where the tenant's own configuration is kept ---------------------------
+//
+// The question this answers is not "is something configured" but "can an
+// administrator change it from the setup screens" — three different failures
+// that send somebody to three different places.
+$repository = new FileRepository();
+$store = new ConfigStore($repository);
+$tenant = VisitorSession::resolveTenant();
+
+line($repository->writable(), 'Configuration storage', $repository->writable()
+    ? $repository->location()
+    : $repository->unavailableReason());
+
+if ($repository->insideDocumentRoot()) {
+    printf("     %-34s %s\n", '', 'WARNING: that path is inside the document root. Its contents are served over HTTP, and the next deploy rsyncs it with --delete.');
+}
+
+$published = Knowledge::forTenant($tenant, $store);
+$summary = $published->summary();
+$sections = $summary['sections'];
+$source = $store->published($tenant)['source'];
+
+line($summary['configured'], 'Approved knowledge (tenant ' . $tenant . ')', $summary['configured']
+    ? count($sections) . ' section(s) — ' . implode(', ', $sections) . ' [' . $source . ']'
+    : match ($source) {
+        'legacy-file' => 'read from ' . ConfigStore::legacyPath() . ', but nothing is published and it cannot be saved',
+        default => 'nothing published, and no ' . ConfigStore::legacyPath() . ' to import',
+    });
+
+if (ConfigStore::legacyExists()) {
+    printf("     %-34s %s\n", '', 'A Phase 2C knowledge.json is still present at ' . ConfigStore::legacyPath() . '. It is imported once and then left alone; it is safe to keep as a rollback.');
+}
+
+// --- Who can administer this deployment -------------------------------------
+//
+// An owner list is the bootstrap: with nobody on it and nobody in the tenant
+// record, the setup screens are unreachable and there is no way in from a
+// browser. That is a configuration problem that looks like a broken product.
+$owners = StaffSession::bootstrapOwners();
+$roster = $repository->writable() ? StaffSession::roster($repository, $tenant) : [];
+line($roster !== [], 'Administrators', $roster !== []
+    // Counts only. A portal uuid identifies a real person across the whole
+    // fleet, and this output gets pasted into chat threads.
+    ? count($owners) . ' from LOBBY_OWNER_UUIDS, ' . (count($roster) - count($owners)) . ' added in-product'
+    : 'nobody can open the setup screens. Set LOBBY_OWNER_UUIDS to one or more portal uuids.');
+
+$journeys = $published->journeys();
+printf("     %-34s %s\n", 'Visitor journeys', implode(', ', array_map(
+    static fn (string $k, bool $v): string => $k . '=' . ($v ? 'on' : 'off'),
+    array_keys($journeys),
+    array_values($journeys),
+)));
+
+if ($journeys['handover'] && Env::get('LOBBY_DESK_ALWAYS_OPEN') === 'true') {
+    printf("     %-34s %s\n", '', 'LOBBY_DESK_ALWAYS_OPEN=true: visitors are told staff are available without this server having observed anybody at the desk.');
+}
 
 $stateDir = RateLimit::directory();
 line(is_writable($stateDir), 'Rate limiter state directory', $stateDir);

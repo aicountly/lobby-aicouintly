@@ -55,8 +55,32 @@ final class Reception
         ],
     ];
 
+    /**
+     * Which visitor journey each action opens.
+     *
+     * An action whose journey this tenant has switched off is not offered to
+     * the model and is dropped if the model proposes it anyway. Both halves are
+     * needed: withholding the tool is what makes the model behave, and dropping
+     * the output is what makes it *true*, because a tool definition is a
+     * request and the reply is not bound by it.
+     */
+    private const ACTION_JOURNEY = [
+        'offer_booking' => 'booking',
+        'offer_enquiry' => 'enquiry',
+        'request_handover' => 'handover',
+    ];
+
     public function __construct(
         private readonly ConversationProvider $provider,
+        /**
+         * This tenant's published knowledge.
+         *
+         * Injected rather than looked up, because a static lookup inside a
+         * prompt builder is a lookup with no tenant in scope — exactly the
+         * shape of bug that has one business's receptionist reading another's
+         * approved information.
+         */
+        private readonly Knowledge $knowledge,
     ) {
     }
 
@@ -114,18 +138,31 @@ final class Reception
      */
     public function systemPrompt(): string
     {
-        $summary = Knowledge::summary();
+        $summary = $this->knowledge->summary();
         $business = $summary['businessName'] ?? 'this business';
-        $knowledge = Knowledge::render();
+        $knowledge = $this->knowledge->render();
+        $persona = $this->knowledge->persona();
+        $journeys = $this->knowledge->journeys();
+
+        $named = $persona['displayName'] !== ''
+            ? "You are {$persona['displayName']}, the AI receptionist for {$business}"
+            : "You are the AI receptionist for {$business}";
+
+        $tone = match ($persona['tone']) {
+            'warm' => '- Be warm and personable, and still brief. No lists unless the visitor asks for one.',
+            'concise' => '- Be brief to the point of terse. One or two sentences. No pleasantries beyond the first turn.',
+            'formal' => '- Be formal and correct. Use full sentences and no contractions. No lists unless asked.',
+            default => '- Be warm and brief. No lists unless the visitor asks for one.',
+        };
 
         $rules = [
-            "You are the AI receptionist for {$business}, answering visitors in a virtual reception area.",
+            $named . ', answering visitors in a virtual reception area.',
             '',
             'How to behave:',
             '- Say plainly that you are an AI receptionist if anyone asks. Never imply you are a person.',
             '- Keep answers to two or three sentences. This is a front desk, not a document.',
             '- Ask one relevant follow-up question when it would actually help.',
-            '- Be warm and brief. No lists unless the visitor asks for one.',
+            $tone,
             '',
             'What you must not do:',
             '- Do not invent or estimate anything: fees, opening hours, availability, addresses, names, timescales.',
@@ -137,9 +174,13 @@ final class Reception
             '  separately, and only the booking system can say a booking was made.',
             '',
             'Offering the right thing:',
-            '- Use offer_booking when the visitor wants an appointment.',
+            $journeys['booking']
+                ? '- Use offer_booking when the visitor wants an appointment.'
+                : '- This business does not take appointments through reception. Do not offer to book one; take an enquiry instead.',
             '- Use offer_enquiry when a person needs to follow up, or when you do not have the answer.',
-            '- Use request_handover when the visitor asks for a human.',
+            $journeys['handover']
+                ? '- Use request_handover when the visitor asks for a human.'
+                : '- Nobody is available to take a handover here. If the visitor asks for a person, say so and offer to take an enquiry.',
             '- These only put an option in front of the visitor. They do not complete anything.',
         ];
 
@@ -223,6 +264,9 @@ final class Reception
     {
         $tools = [];
         foreach (self::ACTIONS as $name => $definition) {
+            if (!$this->journeyEnabled($name)) {
+                continue;
+            }
             $properties = [];
             foreach ($definition['properties'] as $property => $description) {
                 $properties[$property] = ['type' => 'string', 'description' => $description];
@@ -260,6 +304,12 @@ final class Reception
             if (!array_key_exists($name, self::ACTIONS) || isset($seen[$name])) {
                 continue;
             }
+            if (!$this->journeyEnabled($name)) {
+                // The tool was not offered, so this is a model that named one
+                // anyway. Dropped silently: the reply still stands, and the
+                // visitor is not shown an option this business does not have.
+                continue;
+            }
             $seen[$name] = true;
 
             $input = [];
@@ -289,11 +339,14 @@ final class Reception
     private function suggestions(array $actions): array
     {
         $names = array_column($actions, 'name');
-        $summary = Knowledge::summary();
-        $sections = $summary['sections'];
+        $sections = $this->knowledge->summary()['sections'];
+        $journeys = $this->knowledge->journeys();
 
         $suggestions = [];
-        if (!in_array('offer_booking', $names, true)) {
+        // Never suggest a journey this business has switched off. A chip that
+        // opens a panel saying the thing it offered is unavailable is worse
+        // than no chip.
+        if ($journeys['booking'] && !in_array('offer_booking', $names, true)) {
             $suggestions[] = 'I would like to book an appointment';
         }
         if (in_array('hours', $sections, true)) {
@@ -307,5 +360,24 @@ final class Reception
         }
 
         return array_slice($suggestions, 0, 3);
+    }
+
+    /**
+     * Has this tenant switched on the journey behind this action?
+     *
+     * `enquiry` is the one that stays available when nothing is configured at
+     * all: a receptionist that does not know the answer has to be able to offer
+     * to take a message, otherwise an unconfigured deployment is a dead end
+     * rather than a front desk. Taking an enquiry is also the only one of the
+     * three that needs nothing from another product to be honest about.
+     */
+    private function journeyEnabled(string $action): bool
+    {
+        $journey = self::ACTION_JOURNEY[$action] ?? null;
+        if ($journey === null) {
+            return false;
+        }
+
+        return $journey === 'enquiry' ? true : $this->knowledge->journeys()[$journey];
     }
 }
