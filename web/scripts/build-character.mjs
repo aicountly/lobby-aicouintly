@@ -68,8 +68,8 @@
  *   visible.
  */
 import { NodeIO } from '@gltf-transform/core'
-import { ALL_EXTENSIONS } from '@gltf-transform/extensions'
-import { dedup, prune, resample, textureCompress, weld } from '@gltf-transform/functions'
+import { ALL_EXTENSIONS, EXTTextureWebP } from '@gltf-transform/extensions'
+import { dedup, prune, resample, weld } from '@gltf-transform/functions'
 import sharp from 'sharp'
 
 const [, , input, output] = process.argv
@@ -79,19 +79,20 @@ if (!input || !output) {
 }
 
 /** The face is the focal point and keeps a larger budget than anything else. */
-const FACE_TEXTURE = /skin|diffuse2|eye/i
+const FACE_TEXTURE = /skin|diffuse2/i
+/** Eyes are small but read as detail, so they keep their budget too. */
+const EYE_TEXTURE = /eye/i
 /**
- * Per-mesh keep lists.
+ * Per-mesh morph keep lists.
  *
- * The cut here is not about file size — sparse accessors already make these
- * nearly free on disk. It is about PARSE time: three.js expands every morph
- * target to a dense Float32Array over the whole mesh when it loads, so the cost
- * is vertex count times target count, and it is paid on the main thread while
- * the visitor waits. Measured at 7.6 s for the untrimmed file.
+ * Not about file size — sparse accessors already make these nearly free on
+ * disk. It is about PARSE time: three.js expands every morph target to a dense
+ * Float32Array over the whole mesh when it loads, so the cost is vertex count
+ * times target count, paid on the main thread while the visitor waits.
  *
  * `base` keeps everything, because it is exactly the ARKit 52 plus the 14
- * viseme shapes and both are what ASSETS.md promises a replacement will have.
- * The rest keep only what something actually drives.
+ * viseme shapes and both are what ASSETS.md promises. The rest keep only what
+ * something actually drives.
  */
 const KEEP = [
   // Lashes follow the lid. Blink and squint are visible; nothing else on a
@@ -104,27 +105,80 @@ const KEEP = [
   [/high-poly/i, /^$/],
 ]
 
+/**
+ * Localisation: the receptionist is Indian.
+ *
+ * Aicountly sells in India and the lobby is the first thing a prospect sees, so
+ * a European-looking receptionist is the wrong front desk. The source asset is
+ * MakeHuman's `young_lightskinned_female`, and no South Asian MakeHuman skin
+ * was reachable from this build environment — the realistic skins live in a
+ * separate asset download, not in any git repository that can be fetched here.
+ *
+ * **So this changes colour, not bone structure, and that limit is real.** The
+ * skin tone, hair and clothing are shifted; the underlying face geometry is the
+ * same parametric MakeHuman head. At counter distance the colouring carries it;
+ * in close-up the features are not specifically South Asian. Changing those
+ * needs MakeHuman's own ethnic morphs applied before export, which means
+ * Blender — see ASSETS.md for what a proper replacement should supply.
+ *
+ * Values were chosen by rendering, not by theory: a modest darkening vanishes
+ * under the lobby's bright lighting, so the shift has to be stronger in texture
+ * space than it looks on its own.
+ */
+const SKIN = { brightness: 0.56, saturation: 1.32, hue: 8 }
+/** Near-black rather than the source's mid-brown. */
+const HAIR = { brightness: 0.22, saturation: 0.5 }
+/**
+ * The source garment is a casual blue tee with a printed logo, which is not
+ * reception dress. Replacing the diffuse with a flat colour turns it into a
+ * plain top and takes the logo with it; the normal map survives, so the fabric
+ * still creases. Deep maroon reads as workwear and sits well against the
+ * lobby's oak and green.
+ */
+const GARMENT = { r: 106, g: 27, b: 54 }
+
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS)
 const doc = await io.read(input)
 const root = doc.getRoot()
 
+// Declared, not assumed. glTF core allows only PNG and JPEG, so WebP images
+// need EXT_texture_webp in the file — browsers happen to decode them anyway
+// through a blob URL, which makes an undeclared file look fine right up until
+// something stricter reads it. Not marked required: a loader without it can
+// still read the geometry and the rig.
+doc.createExtension(EXTTextureWebP).setRequired(false)
+
 await doc.transform(prune(), dedup(), resample(), weld())
 
-// --- 1. Textures -----------------------------------------------------------
-await doc.transform(
-  textureCompress({ encoder: sharp, targetFormat: 'webp', quality: 85, resize: [2048, 2048] }),
-)
-
+// --- 1. Textures: resized, recoloured, and encoded exactly once -------------
+//
+// One sharp pipeline per texture rather than a global pass followed by a
+// per-texture fix-up: every extra encode is another round of lossy WebP on the
+// face, which is the one surface anybody looks at closely.
 for (const texture of root.listTextures()) {
   const name = texture.getName() || ''
-  const size = texture.getSize() ?? [0, 0]
-  const cap = FACE_TEXTURE.test(name) ? 2048 : 1024
   const image = texture.getImage()
-  if (!image || Math.max(size[0], size[1]) <= cap) continue
+  if (!image) continue
 
-  const resized = await sharp(Buffer.from(image)).resize(cap, cap, { fit: 'inside' }).webp({ quality: 85 }).toBuffer()
-  texture.setImage(new Uint8Array(resized)).setMimeType('image/webp')
-  console.log(`  texture ${name}: ${size[0]}x${size[1]} -> ${cap} max`)
+  const size = texture.getSize() ?? [0, 0]
+  const cap = FACE_TEXTURE.test(name) || EYE_TEXTURE.test(name) ? 2048 : 1024
+
+  let pipe
+
+  if (/casualsuit.*diffuse/i.test(name)) {
+    // Flat colour at a small size: there is no detail left to preserve.
+    pipe = sharp({ create: { width: 512, height: 512, channels: 3, background: GARMENT } })
+  } else {
+    pipe = sharp(Buffer.from(image))
+    if (Math.max(size[0], size[1]) > cap) pipe = pipe.resize(cap, cap, { fit: 'inside' })
+    if (FACE_TEXTURE.test(name)) pipe = pipe.modulate(SKIN)
+    else if (/ponytail/i.test(name)) pipe = pipe.modulate(HAIR)
+  }
+
+  const encoded = await pipe.webp({ quality: 88 }).toBuffer()
+  texture.setImage(new Uint8Array(encoded)).setMimeType('image/webp')
+  const after = (encoded.byteLength / 1024).toFixed(0)
+  console.log(`  texture ${name.padEnd(34)} ${size[0]}x${size[1]} -> ${cap} max, ${after} KB`)
 }
 
 // --- 2 and 3. Morph targets ------------------------------------------------

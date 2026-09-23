@@ -135,3 +135,62 @@ and never blocks on the download.
 - **Reception still answers nothing in production**, because no AI credential is
   bound in Console yet. That is Phase 2C's outstanding item, not this one's.
 - Nothing was merged and nothing was deployed.
+
+---
+
+## Amendment — an Indian receptionist, and the lip-sync lead
+
+Two things reported from the deployed site after this note was written.
+
+### 1. The receptionist was European
+
+Aicountly sells in India, so the front desk should not read as foreign.
+`build-character.mjs` now shifts the skin tone, darkens the hair to near-black,
+and replaces the source's casual printed tee with a flat maroon top — the
+printed logo goes with it, and the normal map survives so the fabric still
+creases.
+
+**It changes colour, not bone structure.** The face geometry is the same
+parametric MakeHuman head. At counter distance the colouring carries it; in
+close-up the features are not specifically South Asian. Doing that properly
+means applying MakeHuman's ethnic morphs before export, which needs Blender.
+
+A bounded search for a South Asian MakeHuman skin found nothing reachable: the
+realistic skins ship in a separate asset download rather than a git repository,
+and `makehumancommunity/makehuman` — which is reachable, and CC0 — carries no
+diffuse textures in its skins directory.
+
+Two incidental fixes came with the rework: textures are now encoded **once**
+rather than twice, so the face takes one round of lossy WebP instead of two, and
+the file declares `EXT_texture_webp` again. Dropping `textureCompress` had
+silently removed that declaration; browsers decode WebP through a blob URL
+regardless, which is exactly the kind of thing that works until something
+stricter reads the file.
+
+### 2. The lips led the voice
+
+*"the lip movement when we approach the reception is acting only and the voice
+follows a second later"* — accurate, and two bugs pulling the same way.
+
+`speechSynthesis.speak()` returns long before any sound, and the viseme schedule
+was anchored at the moment of the request. The whole engine warm-up was spent
+mouthing a line nobody could hear yet. The re-timing built for this could not
+rescue it either, because `onboundary` also measured elapsed time from before
+`speak()` was called — correcting the schedule towards a clock that was itself
+late.
+
+Both now measure from `onstart`, so the mouth stays closed until the voice
+actually starts. A 1.2-second floor covers browsers that never fire `onstart`,
+which Chrome has long-standing bugs around.
+
+Two tests pin it, and they fail against the old code — verified by putting the
+bug back.
+
+### Verification
+
+36/36 backend, 93/93 numeric (two new), 23/23 browser, clean build and
+typecheck, ARKit 52/52 still intact on the rebuilt character.
+
+**The sync fix has not been heard.** It is verified by test and by reasoning
+about the event order, not by listening to a browser speaking — this environment
+has no audio. That is the one claim worth checking on a real device.

@@ -333,10 +333,20 @@ export function createVoiceOutput(lang = 'en-GB'): VoiceOutput | null {
         utterance.rate = 1
         utterance.pitch = 1
 
-        const startedAt = now()
-        utterance.onstart = () => handlers.onStart?.()
+        // Measured from when the voice actually starts, not from when it was
+        // asked to. The engine's warm-up sits between the two, and folding it
+        // into every boundary's elapsed time makes the re-timing correct the
+        // schedule towards a clock that is itself late.
+        let audioStartedAt = 0
+        utterance.onstart = () => {
+          audioStartedAt = now()
+          handlers.onStart?.()
+        }
         utterance.onboundary = (event) => {
-          handlers.onBoundary?.(event.charIndex ?? 0, now() - startedAt)
+          // A boundary before onstart would mean no anchor yet; treat the first
+          // one as the anchor rather than reporting a nonsense elapsed time.
+          if (audioStartedAt === 0) audioStartedAt = now()
+          handlers.onBoundary?.(event.charIndex ?? 0, now() - audioStartedAt)
         }
         const finish = () => {
           if (current === utterance) current = null

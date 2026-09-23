@@ -90,8 +90,30 @@ come from `VISEME_TO_ARKIT` at runtime.
 It is **not photoreal**, and nobody should say it is. It is a parametric human
 from the MakeHuman ecosystem: realistic proportions, real skin, eye and hair
 textures, and a face that holds an expression — but not a scan and not a sculpt.
-It also arrives in a casual top rather than business dress, which is a wardrobe
-limitation of the source asset, not a choice.
+
+#### Localised for India, in colour only
+
+Aicountly sells in India and the lobby is the first thing a prospect sees, so
+the receptionist should not read as European. `build-character.mjs` shifts the
+skin tone, darkens the hair to near-black, and replaces the source's casual
+printed tee with a flat maroon top — which also takes the printed logo with it,
+since the normal map survives and keeps the fabric creasing.
+
+**This changes colour, not bone structure, and the limit is real.** The face
+geometry is the same parametric MakeHuman head. At counter distance the
+colouring carries it; in close-up the features are not specifically South Asian.
+Fixing that properly means applying MakeHuman's own ethnic morphs before export,
+which needs Blender — so it belongs in a replacement asset rather than in this
+pipeline.
+
+No South Asian MakeHuman skin was reachable from this build environment: the
+realistic skins ship in a separate asset download, not in any git repository
+fetchable here. `makehumancommunity/makehuman` is reachable and its assets are
+CC0, but the skins directory in it carries no diffuse textures.
+
+The transform values were chosen by rendering rather than by theory — a modest
+darkening disappears under the lobby's bright lighting, so the shift has to be
+stronger in texture space than it looks on its own.
 
 It replaced the generated stylised figure described in RELEASE-2A-2B.md. That
 figure is still in the repository and still mounts whenever no model is

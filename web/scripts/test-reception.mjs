@@ -1037,12 +1037,35 @@ await asyncTest('typing still does not turn the sound on', async () => {
   convo.dispose()
 })
 
+await asyncTest('the mouth stays closed until the voice actually starts', async () => {
+  const adapter = fakeAdapter(OK_REPLY)
+  const speaker = fakeVoiceOutput()
+  const { convo, sig } = newConversation(adapter, { voiceOutput: speaker })
+  convo.setVoiceOutput(true)
+  await convo.ask('hello')
+
+  // speechSynthesis.speak() has returned, but no sound has come out yet: the
+  // engine still has to pick a voice and warm up, which on a real browser is
+  // hundreds of milliseconds and sometimes more than a second. Animating here
+  // is what made the lips lead the voice for a whole reply.
+  assert.equal(speaker.state.spoken.length, 1, 'the line was handed to the engine')
+  assert.equal(sig.speaking, false, 'but nothing is being said yet, so the mouth is still')
+  assert.deepEqual(sig.timeline, [], 'and no schedule is running')
+
+  speaker.state.handlers.onStart()
+  assert.equal(sig.speaking, true, 'the schedule starts when the voice does')
+  assert.ok(sig.timeline.length > 0, 'and it has cues to play')
+
+  convo.dispose()
+})
+
 await asyncTest('a word boundary re-anchors the mouth without rewinding it', async () => {
   const adapter = fakeAdapter(OK_REPLY)
   const speaker = fakeVoiceOutput()
   const { convo, sig } = newConversation(adapter, { voiceOutput: speaker })
   convo.setVoiceOutput(true)
   await convo.ask('hello')
+  speaker.state.handlers.onStart()
   assert.equal(sig.offsetMs, 0)
   speaker.state.handlers.onBoundary(20, 4000)
   assert.ok(sig.offsetMs > 0, `offset was ${sig.offsetMs}`)
