@@ -101,23 +101,45 @@ key is released when the window loses focus or you leave the scene. With
 `prefers-reduced-motion`, destinations arrive instantly and idle animation is
 off.
 
-### What the lobby is *not* connected to
+### What the lobby is and is not connected to
 
-Each Aicountly app owns its own data, and Lobby holds none of it. In live mode
-(`VITE_LOBBY_SERVICE_MODE=live`) every capability currently reports itself
-unavailable and names what is missing, rather than faking a result. Appointments
-owns booking and reaches Calendar itself; Lobby has no calendar store and never
-calls Calendar directly. See
-[docs/lobby/INTEGRATIONS.md](docs/lobby/INTEGRATIONS.md).
+Each Aicountly app owns its own data, and Lobby holds none of it. It owns three
+things and must never acquire a fourth: the tenant's approved reception
+configuration, the live reception queue, and who has access to the desk.
 
-The 3D receptionist is a **stylised character generated in code** — an
-articulated figure with a procedural face carrying seventeen ARKit-named morph
-targets. It is not scanned, sculpted or photoreal art, it is labelled as a
-demonstration character in the room, and no licensed rigged human was obtainable
-from this build; [docs/lobby/ASSETS.md](docs/lobby/ASSETS.md) records what was
-checked and sets out exactly what a final character has to provide. Everything
-that drives it reads what the character can *actually* do rather than what a
-manifest claims, so dropping in a real rig is a file copy.
+In live mode (`VITE_LOBBY_SERVICE_MODE=live`) booking reaches Aicountly
+Appointments, and "speak to a person" reaches the staff desk in this product.
+Enquiries and payments still report themselves unavailable and name what is
+missing rather than faking a result. Appointments owns booking and reaches
+Calendar itself; Lobby has no calendar store and never calls Calendar directly.
+See [docs/lobby/INTEGRATIONS.md](docs/lobby/INTEGRATIONS.md).
+
+### The staff and administration surface
+
+Three paths behind the portal sign-in, all role-checked on the server:
+
+| Path | Who | What |
+| --- | --- | --- |
+| `/setup` | owner, manager | what the receptionist may say; draft, review, publish |
+| `/desk` | owner, manager, agent | the queue of visitors asking for a person |
+| `/staff` | owner | who has access here |
+| `/diagnostics` | owner, manager | what is configured on this deployment |
+
+Two settings gate all of it and both are unset by default:
+`LOBBY_DATA_DIR` (somewhere outside the document root to save to) and
+`LOBBY_OWNER_UUIDS` (who is an owner). `server-php/.env.example` explains both,
+and `php api/tools/check-console-ai.php` reports them on the server.
+
+### The 3D receptionist
+
+A **licensed rigged human** — Microsoft RocketBox `Business_Female_01`, MIT —
+3.89 MB, 8,966 triangles, 80 bones, with all 52 ARKit blendshapes and all 15
+OVR visemes. She is **not** the approved reference likeness: different face,
+charcoal rather than emerald, short hair rather than long half-up, no badge.
+[docs/lobby/RELEASE-2E.md](docs/lobby/RELEASE-2E.md) records the gap and
+[docs/lobby/ASSETS.md](docs/lobby/ASSETS.md) sets out what a final character has
+to provide. Everything that drives her reads what the character can *actually*
+do rather than what a manifest claims, so replacing the rig is a file copy.
 
 ## Layout
 

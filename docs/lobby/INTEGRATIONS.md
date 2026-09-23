@@ -3,7 +3,14 @@
 Lobby is the front door. It holds no business data of its own and it is not
 allowed to acquire any: no mirrored appointment table, no cached calendar, no
 database credentials for another product, no scheduled job copying rows between
-applications. Where it needs something another Aicountly application owns, it
+applications.
+
+As of Phase 3 it owns exactly three things, and must never acquire a fourth:
+the tenant's approved reception configuration, the live reception queue, and
+who has access to the desk. A service entry may carry an `appointmentTypeId`
+and a tenant may carry an Appointments company id — those are **references**,
+the same way Appointments holds a reference uuid for a contact rather than a
+contact. Where it needs something another Aicountly application owns, it
 asks that application over its API, at the moment it needs it, and shows what
 comes back.
 
@@ -34,8 +41,17 @@ may invent a booking reference, a delivery confirmation or an answer.
 
 ## What is connected today
 
-Nothing. In `live` mode every capability reports unavailable, and the reasons
-below are what it says.
+| Capability | Owner | State |
+| --- | --- | --- |
+| Reception conversation | Lobby (Console holds the key) | implemented; needs a Console binding |
+| Booking, availability, appointment types | Aicountly Appointments | **implemented**, server-relayed |
+| Speak to a person | Lobby | **implemented** — the queue and the staff desk |
+| Enquiries | Connect / Helpdesk | not connected — no owner endpoint |
+| Payments | Aicountly Pay | not connected |
+| Calendar records | Aicountly Calendar | never directly; only through Appointments |
+
+In `live` mode anything not implemented reports unavailable with a named
+reason, and the reasons below are what it says.
 
 ### Appointments and availability — owned by Aicountly Appointments
 
@@ -43,31 +59,64 @@ Appointments owns booking workflows and reaches Aicountly Calendar itself
 through the agreed integration. **Lobby must never call Calendar directly**, and
 must never keep a copy of an appointment or a calendar record.
 
-Blocked on two things, in order:
+### Correction
 
-1. `VITE_LOBBY_APPOINTMENTS_API_BASE_URL` is unset.
-2. Appointments has published no booking API contract for Lobby to call.
+An earlier version of this page said Appointments was "the same blank scaffold
+as this repository", with no endpoint to call. **That was wrong, and it was
+wrong for some time.** `appointments-aicountly` is a full application — a
+router, controllers, a domain layer, migrations, a client for every other
+product on the fleet — and it publishes the routes below. Lobby's booking
+journey was refusing visitors on the strength of a paragraph nobody rechecked.
 
-At the time of writing, `appointments-aicountly` is the same blank
-scaffold as this repository — `/api/health`, the portal auth relay, and nothing
-else. There is no endpoint to call, so `liveAdapter` does not guess one. An
-invented path and payload would compile, pass review, and fail the first time
-anyone switched it on.
+### What is implemented
 
-To wire it up, Appointments needs to publish, and Lobby needs to implement
-against:
+Lobby calls Appointments. The direction matters: Appointments asks Lobby for
+almost nothing (aggregate contribution figures and a deep link, neither of
+which Lobby serves yet).
 
-| Capability | What Lobby needs back |
+| Route | Used for |
 | --- | --- |
-| List bookable appointment types | id, label, description, duration |
-| Availability for a type and date | slot id, start time, timezone |
-| Request a booking | the created appointment's reference, or a typed refusal |
+| `GET v1/services` | the appointment types a visitor may book |
+| `GET v1/availability/slots` | free times for a type on a date |
+| `POST v1/bookings` | make the booking |
 
-Also required before that work starts: whether a lobby visitor is anonymous or
-must be identified, and what authenticates the call. Lobby is a public surface
-(see below), so it cannot hold a secret — any credential has to be held by
-`server-php` and the call relayed, the same way the portal auth relay already
-works.
+Authenticated with `X-Service-Key`, which is why the call is made by
+`server-php` and not by the browser: every `VITE_*` value is inlined into the
+bundle at build time and is public.
+`Auth::provenBookingSource()` in Appointments derives the booking source from
+the authenticated caller, so a booking made this way is recorded as
+`RECEPTIONIST` — a caller cannot claim that by putting it in a payload.
+
+`VITE_LOBBY_APPOINTMENTS_API_BASE_URL` is **not** what connects it, and is kept
+only so an existing `.env` does not break. Booking is configured with
+`LOBBY_APPOINTMENTS_API_BASE` and `LOBBY_APPOINTMENTS_SERVICE_KEY` in the
+server's `.env`, plus the Appointments company id in the setup screens.
+
+### Retrying, and why there is exactly one re-send
+
+A `POST` that fails at the transport layer is **uncertain**: the booking may
+exist and the answer may have been lost. Retrying blind gives one visitor two
+appointments.
+
+Appointments implements `Idempotency-Key` with a stored replay — the
+`appointment_idempotency_keys` table, and `Idempotency::replay()` at the top of
+`BookingsController::create`. So Lobby's single re-send carries the **same**
+key, which makes it a status check rather than a retry: if the first attempt
+landed, the second returns that booking rather than making another.
+
+That is the whole justification, and it holds only while Appointments keeps
+that behaviour. `server-php/tests/fixtures/fake-appointments.php` honours the
+replay, so if it ever stops, those tests are what should start failing.
+
+Four outcomes, rendered as four different things: **confirmed** (Appointments
+named it), **refused** (with its reason, so the visitor can pick another time),
+**uncertain** (two attempts, no answer — the visitor is told to check rather
+than shown a confirmation), and **unavailable**. A 2xx with no reference in it
+is uncertain too.
+
+Appointments answers `503 calendar_unavailable` rather than an empty slot list
+when the calendar is what failed, and that distinction is preserved all the way
+to the visitor: "we could not look" must never render as "nothing is free".
 
 ### Reception AI — owned by Lobby
 
@@ -104,10 +153,36 @@ In demonstration mode the same capability is answered by a keyword-matched
 script in `demoAdapter.ts`. There is no model behind it, and the interface says
 so on the screen the visitor is looking at.
 
+### Speak to a person — owned by Lobby
+
+Implemented in Phase 3. A visitor asking for a human joins a queue that staff
+work from `/desk`, with the state machine `requested → queued → assigned →
+accepted → resolved`.
+
+Two properties are load-bearing:
+
+- **Availability is observed.** Loading the desk screen is a heartbeat, and a
+  visitor is only queued while one is fresh. There is no rota, no opening-hours
+  table and no flag an administrator can set, because "somebody is available"
+  with nobody logged in is the one thing a reception product must never
+  display: the visitor sits down and waits on the strength of it.
+- **A claim is exclusive.** Two staff pressing "Take" at the same instant is a
+  race, resolved under an exclusive lock, and the loser is told it is taken.
+  Verified with 16 concurrent processes: one winner. With the lock removed, all
+  sixteen win.
+
+The queue holds a name, a one-line reason and timestamps. It does not hold the
+conversation: Lobby keeps a transcript for the length of a visitor's session and
+does not log it. This is not a CRM and not a ticketing system.
+
 ### Enquiries — Aicountly Connect / Helpdesk
 
 Not connected. No owner endpoint is configured, so accepting an enquiry in live
 mode would mean dropping it while telling the visitor it had been sent.
+
+This is the one journey that stays available to the receptionist regardless,
+because "I do not know, but I can take a message" has to be reachable — but the
+message currently goes nowhere, and the interface says so.
 
 ### Payments — Aicountly Pay
 
