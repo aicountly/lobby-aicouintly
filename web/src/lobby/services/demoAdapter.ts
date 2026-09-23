@@ -17,6 +17,7 @@ import type {
   BookingRequest,
   EnquiryReceipt,
   EnquiryRequest,
+  HandoverStatus,
   LobbyServiceAdapter,
   ReceptionReply,
   ReceptionTurn,
@@ -111,9 +112,17 @@ function reference(prefix: string): string {
 }
 
 /** A short pause, so the interface's loading states are actually exercised. */
+/**
+ * Resolve after a short pause, so a demonstration does not answer instantly.
+ *
+ * The bare `setTimeout` rather than `window.setTimeout`: they are the same
+ * function in a browser, and this module has no other DOM dependency, so
+ * reaching through `window` only made it unloadable anywhere else — including
+ * in the tests that check what a demonstration is allowed to claim.
+ */
 function settle<T>(value: T, ms = 260): Promise<T> {
   return new Promise((resolve) => {
-    window.setTimeout(() => resolve(value), ms)
+    setTimeout(() => resolve(value), ms)
   })
 }
 
@@ -173,5 +182,48 @@ export const demoAdapter: LobbyServiceAdapter = {
       ? { text: matched.text, demo: true, suggestions: matched.suggestions }
       : FALLBACK
     return settle(ok(reply), 420)
+  },
+
+  /**
+   * A queue with nobody in it and nobody watching it.
+   *
+   * The demonstration deliberately does not invent a position or a wait, and
+   * `demo: true` is what the interface renders as a badge. A demo that showed
+   * "you are third in the queue" would be the one thing a reception product
+   * must never do — somebody would sit down and wait.
+   */
+  async requestHandover(_name: string, _reason: string) {
+    return settle(
+      ok<HandoverStatus>({
+        state: 'requested',
+        ahead: 0,
+        withSomeone: false,
+        staffed: false,
+        message:
+          'Demonstration only. Nobody was alerted and nobody is coming. On a connected deployment this would put you in the queue at the reception desk.',
+        demo: true,
+      }),
+    )
+  },
+
+  async handoverStatus() {
+    return settle(
+      ok<HandoverStatus>({
+        state: null,
+        ahead: 0,
+        withSomeone: false,
+        staffed: false,
+        message: '',
+        demo: true,
+      }),
+      120,
+    )
+  },
+
+  async cancelHandover() {
+    return settle(
+      ok<HandoverStatus>({ state: null, ahead: 0, withSomeone: false, staffed: false, message: '', demo: true }),
+      120,
+    )
   },
 }

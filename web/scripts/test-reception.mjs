@@ -1575,6 +1575,91 @@ await asyncTest('speech never starts itself', async () => {
   })
 }
 
+
+// ---------------------------------------------------------------------------
+// Phase 3 — the handover journey, and what a demonstration may claim
+// ---------------------------------------------------------------------------
+
+await asyncTest('the demonstration never shows a queue position or a wait', async () => {
+  const { demoAdapter } = await load('/src/lobby/services/demoAdapter.ts')
+
+  const asked = await demoAdapter.requestHandover('Asha', 'Delivery')
+  assert.equal(asked.status, 'ok')
+  assert.equal(asked.data.demo, true, 'it must be labelled a demonstration')
+  assert.equal(asked.data.state, 'requested', 'and must not claim to have been queued')
+  assert.equal(asked.data.ahead, 0, 'a demo must never invent a position')
+  assert.equal(asked.data.staffed, false, 'and must never claim somebody is there')
+  assert.ok(
+    /nobody was alerted/i.test(asked.data.message),
+    'the sentence must say plainly that nobody was alerted',
+  )
+})
+
+await asyncTest('the live handover reports only what the server recorded', async () => {
+  const { readFileSync } = await import('node:fs')
+  const live = readFileSync('src/lobby/services/liveAdapter.ts', 'utf8')
+
+  // Each of the three handover methods must return unavailable on failure
+  // rather than a status object. A fabricated position here is the failure
+  // this whole product is shaped around avoiding, and it would be one line.
+  for (const method of ['requestHandover', 'handoverStatus', 'cancelHandover']) {
+    const body = live.split(`async ${method}(`)[1]?.split('\n  },')[0] ?? ''
+    assert.ok(body, `${method} must exist in the live adapter`)
+    assert.ok(
+      /if \(!result\.ok\) return unavailable\(/.test(body),
+      `${method} must report unavailable on failure, not a status`,
+    )
+    assert.ok(/demo: false/.test(body), `${method} must never mark a live result as a demonstration`)
+  }
+})
+
+await asyncTest('a journey the business switched off is not offered to a visitor', async () => {
+  const { readFileSync } = await import('node:fs')
+  const centre = readFileSync('src/lobby/ui/ServiceCentre.tsx', 'utf8')
+
+  assert.ok(/function offered\(/.test(centre), 'the service list must be filtered')
+  assert.ok(
+    /journeys\.booking/.test(centre) && /journeys\.handover/.test(centre),
+    'booking and handover must both be gated on the published configuration',
+  )
+  assert.ok(
+    /\{visible\.map\(/.test(centre) && !/\{SERVICES\.map\(/.test(centre),
+    'the filtered list must be the one rendered',
+  )
+})
+
+await asyncTest('the staff surface is not in the bundle a visitor downloads', async () => {
+  const { readFileSync } = await import('node:fs')
+  const app = readFileSync('src/App.tsx', 'utf8')
+
+  assert.ok(
+    /lazy\(\(\) => import\('\.\/admin\/AdminShell'\)/.test(app),
+    'AdminShell must be loaded lazily, not bundled into the entry chunk',
+  )
+  assert.ok(
+    !/^import \{ AdminShell \}/m.test(app),
+    'and must not also be imported statically',
+  )
+})
+
+await asyncTest('no staff route is reachable without the portal bearer token', async () => {
+  const { readFileSync } = await import('node:fs')
+  const api = readFileSync('src/admin/adminApi.ts', 'utf8')
+
+  assert.ok(/getSesKey\(\)/.test(api), 'the admin client must read the portal session key')
+  assert.ok(
+    /authorization: `Bearer \$\{token\}`/.test(api),
+    'and must send it as a bearer token',
+  )
+  // The visitor session header must not appear anywhere in the staff client.
+  // The two credentials are separate on the server; a browser that sent both
+  // would be the first step towards them not being.
+  assert.ok(
+    !/x-lobby-session/i.test(api),
+    'the staff client must never send the anonymous visitor session token',
+  )
+})
+
 // ---------------------------------------------------------------------------
 
 clearTimeout(watchdog)

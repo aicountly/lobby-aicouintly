@@ -78,6 +78,27 @@ export interface EnquiryReceipt {
   note: string
 }
 
+/**
+ * Where a visitor stands in the queue to speak to a person.
+ *
+ * `state` is null when they have not asked. `staffed` is whether anybody is
+ * actually at the desk — observed from a member of staff having the desk
+ * screen open, never inferred from a rota — because a visitor who is told
+ * somebody is coming will wait on the strength of it.
+ *
+ * `ahead` is a count of real waiting entries. There is no branch anywhere that
+ * produces an encouraging number.
+ */
+export interface HandoverStatus {
+  state: 'requested' | 'queued' | 'assigned' | 'accepted' | 'resolved' | 'abandoned' | null
+  ahead: number
+  withSomeone: boolean
+  staffed: boolean
+  message: string
+  /** True when nobody was actually alerted. Rendered as a demo badge. */
+  demo: boolean
+}
+
 export interface ReceptionTurn {
   role: 'visitor' | 'reception'
   text: string
@@ -108,4 +129,9 @@ export interface LobbyServiceAdapter {
   requestBooking(request: BookingRequest): Promise<ServiceOutcome<BookingReceipt>>
   submitEnquiry(request: EnquiryRequest): Promise<ServiceOutcome<EnquiryReceipt>>
   askReception(question: string, history: ReceptionTurn[]): Promise<ServiceOutcome<ReceptionReply>>
+
+  /** Ask to speak to a person. Reports unavailable when nobody is there. */
+  requestHandover(name: string, reason: string): Promise<ServiceOutcome<HandoverStatus>>
+  handoverStatus(): Promise<ServiceOutcome<HandoverStatus>>
+  cancelHandover(): Promise<ServiceOutcome<HandoverStatus>>
 }

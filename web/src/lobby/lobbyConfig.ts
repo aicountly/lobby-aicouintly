@@ -32,6 +32,34 @@ function normalisePath(value: string): string {
   return withSlash.replace(/\/+$/, '') || '/'
 }
 
+/**
+ * Paths for the staff and administration surface.
+ *
+ * Behind the portal like every other non-lobby path, so they sit inside
+ * <AuthProvider> and the existing SSO boot is untouched. They are constants
+ * rather than configuration because, unlike the public lobby, there is no
+ * reason a deployment would want to move or withdraw them: the access control
+ * is the role check on the server, not the obscurity of the URL.
+ */
+export const ADMIN_PATHS = {
+  desk: '/desk',
+  setup: '/setup',
+  staff: '/staff',
+  diagnostics: '/diagnostics',
+} as const
+
+export type AdminPathName = keyof typeof ADMIN_PATHS
+
+/** Which staff screen a path asks for, or null when it is not one of them. */
+export function adminScreenForPath(pathname: string): AdminPathName | null {
+  const normalised = pathname.replace(/\/+$/, '') || '/'
+  const match = (Object.keys(ADMIN_PATHS) as AdminPathName[]).find(
+    (name) => ADMIN_PATHS[name] === normalised,
+  )
+
+  return match ?? null
+}
+
 /** True when `pathname` is the public visitor lobby. */
 export function isPublicLobbyPath(pathname: string): boolean {
   if (!LOBBY_PUBLIC_PATH) return false

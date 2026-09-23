@@ -16,10 +16,11 @@ import { describeIntegrations } from '../services/registry'
 import type { LobbyServiceAdapter } from '../services/types'
 import { BookingJourney } from './journeys/BookingJourney'
 import { EnquiryJourney } from './journeys/EnquiryJourney'
+import { HandoverJourney } from './journeys/HandoverJourney'
 import { ReceptionChat } from './ReceptionChat'
 import { DemoBanner } from './Notices'
 
-export type ServiceKey = 'booking' | 'enquiry' | 'team'
+export type ServiceKey = 'booking' | 'enquiry' | 'team' | 'handover'
 
 export interface ReceptionBinding {
   conversation: ReceptionConversation
@@ -45,7 +46,35 @@ const SERVICES: { key: ServiceKey; title: string; blurb: string }[] = [
     title: 'Speak to our team',
     blurb: 'Ask reception a question now.',
   },
+  {
+    key: 'handover',
+    title: 'Speak to a person',
+    blurb: 'Join the queue for a member of staff.',
+  },
 ]
+
+/**
+ * Which journeys this business actually offers.
+ *
+ * Read from the capability report rather than shown unconditionally. A tile
+ * that opens a panel saying the thing it offered is unavailable is worse than
+ * no tile — and in demonstration mode every one is shown, because the point
+ * there is to demonstrate them.
+ */
+function offered(services: typeof SERVICES, reception: ReceptionBinding, mode: string) {
+  if (mode !== 'live') return services
+
+  const journeys = reception.capabilities?.journeys
+  if (!journeys) return services
+
+  return services.filter((service) =>
+    service.key === 'booking'
+      ? journeys.booking
+      : service.key === 'handover'
+        ? journeys.handover
+        : true,
+  )
+}
 
 interface Props {
   adapter: LobbyServiceAdapter
@@ -68,6 +97,7 @@ export function ServiceCentre({
   initialService = null,
 }: Props) {
   const [active, setActive] = useState<ServiceKey | null>(initialService)
+  const visible = offered(SERVICES, reception, adapter.mode)
   const current = SERVICES.find((service) => service.key === active)
   const root = useRef<HTMLDivElement>(null)
 
@@ -102,6 +132,7 @@ export function ServiceCentre({
           {active === 'enquiry' ? (
             <EnquiryJourney adapter={adapter} onReceipt={reception.conversation.announceReceipt} />
           ) : null}
+          {active === 'handover' ? <HandoverJourney adapter={adapter} /> : null}
           {active === 'team' ? (
             <ReceptionChat
               conversation={reception.conversation}
@@ -117,7 +148,7 @@ export function ServiceCentre({
         <>
           <h3 className="lobby-service-title">{heading}</h3>
           <ul className="lobby-service-list">
-            {SERVICES.map((service) => (
+            {visible.map((service) => (
               <li key={service.key}>
                 <button
                   type="button"

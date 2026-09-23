@@ -30,7 +30,42 @@ export interface LobbyCapabilities {
   speech: CapabilityEntry
   transcription: CapabilityEntry
   knowledge: { configured: boolean; sections: string[]; businessName: string | null; reason: string }
+  /** Which journeys this business has switched on. The server decides; this reports. */
+  journeys: { booking: boolean; enquiry: boolean; handover: boolean }
   actions: string[]
+}
+
+export interface HandoverState {
+  /** null when this visitor has never asked for a person. */
+  state: 'requested' | 'queued' | 'assigned' | 'accepted' | 'resolved' | 'abandoned' | null
+  ahead: number
+  withSomeone: boolean
+  /** Whether anybody actually has the desk open. Observed, never assumed. */
+  staffed: boolean
+  message: string
+}
+
+export interface BookableService {
+  id: string
+  label: string
+  description: string
+  durationMinutes: number
+  depositRequired: boolean
+}
+
+export interface BookableSlot {
+  id: string
+  startsAt: string
+  endsAt: string
+  label: string
+  memberUuid: string
+}
+
+export interface BookingConfirmation {
+  reference: string
+  serviceLabel: string
+  startsAt: string
+  status: string
 }
 
 export interface ReceptionAction {
@@ -57,8 +92,37 @@ export interface ReceptionApi {
   ask(message: string, history: readonly ReceptionTurn[], init?: RequestInit): Promise<ApiResult<AskPayload>>
   speak(text: string, init?: RequestInit): Promise<ApiResult<Blob>>
   transcribe(audio: Blob, init?: RequestInit): Promise<ApiResult<string>>
+
+  /** Where this visitor stands in the queue for a person. */
+  handover(init?: RequestInit): Promise<ApiResult<HandoverState>>
+  requestHandover(name: string, reason: string, init?: RequestInit): Promise<ApiResult<HandoverState>>
+  cancelHandover(init?: RequestInit): Promise<ApiResult<HandoverState>>
+
+  bookableServices(init?: RequestInit): Promise<ApiResult<BookableService[]>>
+  bookableSlots(serviceId: string, date: string, init?: RequestInit): Promise<ApiResult<BookableSlot[]>>
+  /**
+   * Ask Appointments to make the booking.
+   *
+   * Three outcomes, and the caller must render three different things:
+   * confirmed, refused, and — the one that matters — uncertain. An uncertain
+   * result carries `uncertain: true` and no reference, and must never be shown
+   * with a retry button: the server has already made two attempts under the
+   * same idempotency key, and a third is not more information.
+   */
+  book(request: BookingSubmission, init?: RequestInit): Promise<ApiResult<BookingConfirmation>>
+
   /** Drop the session, e.g. when the conversation is disposed. */
   reset(): void
+}
+
+export interface BookingSubmission {
+  serviceId: string
+  startsAt: string
+  memberUuid?: string
+  name: string
+  email: string
+  phone?: string
+  notes?: string
 }
 
 export function createReceptionApi(): ReceptionApi {
@@ -179,6 +243,96 @@ export function createReceptionApi(): ReceptionApi {
           actions: Array.isArray(body.actions) ? (body.actions as ReceptionAction[]) : [],
         },
       }
+    },
+
+    async handover(init) {
+      const response = await authed('handover', { method: 'GET', signal: init?.signal })
+      if (!response || !response.ok) {
+        return failureFrom(response, 'Could not check the queue.')
+      }
+
+      return { ok: true, data: (await response.json()) as HandoverState }
+    },
+
+    async requestHandover(name, reason, init) {
+      const response = await authed('handover', {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        signal: init?.signal,
+        body: JSON.stringify({ name, reason }),
+      })
+
+      if (!response || !response.ok) {
+        // A failure here means nobody was alerted, and the reason says so.
+        // Showing a queue position from a request that was not recorded is the
+        // exact failure this product is shaped around avoiding.
+        return failureFrom(response, 'That could not be recorded, so nobody has been alerted.')
+      }
+
+      return { ok: true, data: (await response.json()) as HandoverState }
+    },
+
+    async cancelHandover(init) {
+      const response = await authed('handover/cancel', { method: 'POST', signal: init?.signal })
+      if (!response || !response.ok) {
+        return failureFrom(response, 'That could not be cancelled.')
+      }
+
+      return { ok: true, data: (await response.json()) as HandoverState }
+    },
+
+    async bookableServices(init) {
+      const response = await authed('booking/services', { method: 'GET', signal: init?.signal })
+      if (!response || !response.ok) {
+        return failureFrom(response, 'The booking system could not be reached.')
+      }
+
+      const body = (await response.json()) as { services?: BookableService[] }
+
+      return { ok: true, data: Array.isArray(body.services) ? body.services : [] }
+    },
+
+    async bookableSlots(serviceId, date, init) {
+      const query = new URLSearchParams({ service: serviceId, date })
+      const response = await authed(`booking/slots?${query.toString()}`, { method: 'GET', signal: init?.signal })
+      if (!response || !response.ok) {
+        // Appointments answers 503 when the calendar could not be read, kept
+        // distinct all the way here so it is never shown as "no times free".
+        return failureFrom(response, 'Times could not be loaded.')
+      }
+
+      const body = (await response.json()) as { slots?: BookableSlot[] }
+
+      return { ok: true, data: Array.isArray(body.slots) ? body.slots : [] }
+    },
+
+    async book(request, init) {
+      const response = await authed('booking', {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        signal: init?.signal,
+        body: JSON.stringify(request),
+      })
+
+      if (!response || !response.ok) {
+        return failureFrom(response, 'The booking could not be made.')
+      }
+
+      const body = (await response.json()) as { confirmed?: boolean; booking?: BookingConfirmation }
+
+      // Only a confirmed booking with a reference is a booking. A 2xx that
+      // says otherwise is treated as a failure rather than rendered as a
+      // receipt with an empty reference on it.
+      if (body.confirmed !== true || !body.booking?.reference) {
+        return {
+          ok: false,
+          reason: 'The booking system did not confirm that appointment.',
+          code: 'unconfirmed',
+          retryable: false,
+        }
+      }
+
+      return { ok: true, data: body.booking }
     },
 
     async speak(text, init) {
